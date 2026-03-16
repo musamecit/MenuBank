@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MenuBank</title>
+  <meta name="description" content="Discover, explore, and share restaurant menus worldwide." />
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background-color: #ffffff;
+      color: #111827;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    .page {
+      width: 100%;
+      max-width: 820px;
+    }
+    h1 {
+      font-size: 32px;
+      margin-bottom: 8px;
+      letter-spacing: -0.04em;
+    }
+    p.lead {
+      font-size: 16px;
+      line-height: 1.6;
+      color: #4b5563;
+      margin-bottom: 24px;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    .primary-btn {
+      appearance: none;
+      border-radius: 999px;
+      border: none;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #ffffff;
+      background: #16a34a;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .secondary-link {
+      font-size: 14px;
+      color: #2563eb;
+      text-decoration: none;
+    }
+    .secondary-link:hover {
+      text-decoration: underline;
+    }
+    @media (max-width: 640px) {
+      h1 {
+        font-size: 26px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>MenuBank</h1>
+    <p class="lead">
+      Discover, explore, and share restaurant menus worldwide. MenuBank brings together menus, prices,
+      and ratings so you can find the right place in just a few taps.
+    </p>
+    <div class="actions">
+      <!-- TODO: Replace with real App Store link -->
+      <a href="#" class="primary-btn" aria-label="Open MenuBank on the App Store">
+        <span>Download on the App Store</span>
+      </a>
+      <a href="privacy.html" class="secondary-link">Privacy Policy</a>
+      <a href="terms.html" class="secondary-link">Terms of Service</a>
+    </div>
+  </main>
+</body>
+</html>
