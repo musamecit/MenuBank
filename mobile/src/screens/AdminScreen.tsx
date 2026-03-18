@@ -258,7 +258,15 @@ export default function AdminScreen() {
         },
         body: JSON.stringify({ action, ...payload }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      const text = await res.text();
+      if (!res.ok) {
+        let errMsg = text;
+        try {
+          const parsed = JSON.parse(text) as { error?: string; message?: string };
+          errMsg = parsed.message ?? parsed.error ?? text;
+        } catch {}
+        throw new Error(errMsg);
+      }
       await loadData();
     } catch (e: unknown) {
       Alert.alert('Error', (e as Error).message);

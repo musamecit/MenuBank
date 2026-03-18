@@ -32,12 +32,17 @@ export default function OwnerDashboardScreen() {
   const styles = useMemo(() => getStyles(colors), [colors]);
 
   const load = useCallback(async () => {
-    const d = await fetchOwnerDashboard(restaurantId);
-    setData(d);
-    if (d?.restaurant.contact_phone) setPhone(d.restaurant.contact_phone);
-    if (d?.restaurant.reservation_url) setReservationUrl(d.restaurant.reservation_url);
-    if (d?.restaurant.image_url) setHeroImageUrl(d.restaurant.image_url);
-    setLoading(false);
+    try {
+      const d = await fetchOwnerDashboard(restaurantId);
+      setData(d);
+      if (d?.restaurant.contact_phone) setPhone(d.restaurant.contact_phone);
+      if (d?.restaurant.reservation_url) setReservationUrl(d.restaurant.reservation_url);
+      if (d?.restaurant.image_url) setHeroImageUrl(d.restaurant.image_url);
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [restaurantId]);
 
   useEffect(() => { load(); }, [load]);

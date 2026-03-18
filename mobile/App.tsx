@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -6,10 +6,12 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import CrashScreen from './src/components/CrashScreen';
 import RootNavigator from './src/navigation/RootNavigator';
 import { trackActiveDate } from './src/lib/analytics';
 import { registerPushToken } from './src/lib/notifications';
 import { queryClient } from './src/lib/queryClient';
+import { subscribeCrash } from './src/utils/crashHandler';
 import './src/lib/i18n';
 
 function AppContent() {
@@ -39,6 +41,20 @@ function AppContent() {
 }
 
 export default function App() {
+  const [globalError, setGlobalError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    return subscribeCrash((err) => setGlobalError(err));
+  }, []);
+
+  if (globalError) {
+    return (
+      <SafeAreaProvider>
+        <CrashScreen error={globalError} />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>

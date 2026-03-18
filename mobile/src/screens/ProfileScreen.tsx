@@ -191,10 +191,17 @@ export default function ProfileScreen() {
           <Text style={[styles.actionRowText, { color: colors.accent, fontWeight: '600' }]}>{t('admin.title')}</Text>
         </TouchableOpacity>
       )}
-      {ownerClaims.length > 0 && (
+      {(ownerClaims.some((c) => c.status === 'approved') || profile?.is_admin) && (
         <TouchableOpacity
           style={[styles.actionRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => navigation.navigate('OwnerDashboard', { restaurantId: ownerClaims[0].restaurant_id })}
+          onPress={() => {
+            const approved = ownerClaims.find((c) => c.status === 'approved');
+            if (approved) {
+              navigation.navigate('OwnerDashboard', { restaurantId: approved.restaurant_id });
+            } else {
+              navigation.navigate('RestaurantSelect');
+            }
+          }}
         >
           <Building2 size={20} color={colors.accent} />
           <Text style={styles.actionRowText}>{t('profile.selectManageRestaurant')}</Text>

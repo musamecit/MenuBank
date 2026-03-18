@@ -17,6 +17,13 @@ export interface Area {
 
 const COUNTRY_NAMES: Record<string, string> = { TR: 'Türkiye', US: 'ABD', GB: 'İngiltere', DE: 'Almanya' };
 
+const DEFAULT_COUNTRIES: Country[] = [
+  { code: 'TR', name: 'Türkiye' },
+  { code: 'US', name: 'ABD' },
+  { code: 'GB', name: 'İngiltere' },
+  { code: 'DE', name: 'Almanya' },
+];
+
 export async function fetchCountries(): Promise<Country[]> {
   try {
     const { data } = await supabase
@@ -25,13 +32,18 @@ export async function fetchCountries(): Promise<Country[]> {
       .order('name', { ascending: true });
     if (data && data.length > 0) return data as Country[];
   } catch {}
-  const { data } = await supabase
-    .from('restaurants')
-    .select('country_code')
-    .eq('status', 'active')
-    .is('deleted_at', null);
-  const codes = [...new Set((data ?? []).map((r: { country_code: string }) => r.country_code).filter(Boolean))];
-  return codes.map((code) => ({ code, name: COUNTRY_NAMES[code] ?? code }));
+  try {
+    const { data } = await supabase
+      .from('restaurants')
+      .select('country_code')
+      .in('status', ['active', 'disabled'])
+      .is('deleted_at', null);
+    const codes = [...new Set((data ?? []).map((r: { country_code: string }) => r.country_code).filter(Boolean))];
+    if (codes.length > 0) {
+      return codes.map((code) => ({ code, name: COUNTRY_NAMES[code] ?? code }));
+    }
+  } catch {}
+  return DEFAULT_COUNTRIES;
 }
 
 const cityIdToName = new Map<string, string>();

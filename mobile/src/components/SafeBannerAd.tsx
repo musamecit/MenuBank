@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
 /** Sabit banner yüksekliği - liste paddingBottom için kullanılır */
-export const BANNER_HEIGHT_TOTAL = 70;
+export const BANNER_HEIGHT_TOTAL = 50;
 
 const BANNER_UNIT_ID_PROD = 'ca-app-pub-6812424036943781/2680494724';
 const BANNER_WIDTH = 320;
@@ -36,20 +35,20 @@ function loadAdModule(): AdModule | null {
 
 function BannerPlaceholder({ colors }: { colors: { background: string; border: string; textSecondary: string } }) {
   return (
-    <View style={{ alignItems: 'center', paddingVertical: 8, backgroundColor: colors.background }}>
+    <View style={{ height: BANNER_HEIGHT, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
       <View
         style={{
           width: BANNER_WIDTH,
           height: BANNER_HEIGHT,
           backgroundColor: colors.border,
-          borderRadius: 8,
+          borderRadius: 6,
           justifyContent: 'center',
           alignItems: 'center',
           borderWidth: 1,
           borderColor: colors.border,
         }}
       >
-        <Text style={{ fontSize: 12, color: colors.textSecondary }}>Reklam alanı</Text>
+        <Text style={{ fontSize: 11, color: colors.textSecondary }}>Reklam alanı</Text>
       </View>
     </View>
   );
@@ -62,7 +61,6 @@ interface SafeBannerAdProps {
 
 export default function SafeBannerAd({ fixed = true }: SafeBannerAdProps) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const [adModule, setAdModule] = useState<AdModule | null>(loadAdModule);
   const [failed, setFailed] = useState(false);
 
@@ -78,18 +76,14 @@ export default function SafeBannerAd({ fixed = true }: SafeBannerAdProps) {
   if (!adModule || failed) {
     const content = <BannerPlaceholder colors={colors} />;
     if (!fixed) return content;
-    return (
-      <View style={{ paddingBottom: insets.bottom, backgroundColor: colors.background }}>
-        {content}
-      </View>
-    );
+    return content;
   }
 
   const { BannerAd, BannerAdSize, TestIds } = adModule;
   const unitId = (__DEV__ ? TestIds?.BANNER : null) ?? BANNER_UNIT_ID_PROD;
 
   const content = (
-    <View style={{ alignItems: 'center', paddingVertical: 8, backgroundColor: colors.background }}>
+    <View style={{ height: BANNER_HEIGHT, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
       <BannerAd
         unitId={unitId}
         size={BannerAdSize?.BANNER ?? 'BANNER'}
@@ -100,10 +94,5 @@ export default function SafeBannerAd({ fixed = true }: SafeBannerAdProps) {
   );
 
   if (!fixed) return content;
-
-  return (
-    <View style={{ paddingBottom: insets.bottom, backgroundColor: colors.background }}>
-      {content}
-    </View>
-  );
+  return content;
 }

@@ -5,9 +5,9 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
+  FlatList,
   ViewToken,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../context/ThemeContext';
 import { markOnboardingSeen } from '../lib/onboarding';
@@ -36,7 +36,7 @@ export default function OnboardingScreen({ onDone }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const [currentIndex, setCurrentIndex] = useState(0);
-  const flatListRef = useRef<FlashList<SlideData>>(null);
+  const flatListRef = useRef<FlatList<SlideData>>(null);
 
   const handleDone = async () => {
     await markOnboardingSeen();
@@ -69,29 +69,39 @@ export default function OnboardingScreen({ onDone }: Props) {
           <Icon size={64} color={colors.accent} />
         </View>
         <Text style={[styles.title, { color: colors.text }]}>{t(item.titleKey)}</Text>
-        <Text style={[styles.desc, { color: colors.subtext }]}>{t(item.descKey)}</Text>
+        <Text style={[styles.desc, { color: colors.textSecondary }]}>{t(item.descKey)}</Text>
       </View>
     );
   };
+
+  const getItemLayout = (_: unknown, index: number) => ({
+    length: width,
+    offset: width * index,
+    index,
+  });
 
   const isLast = currentIndex === slides.length - 1;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TouchableOpacity style={styles.skipBtn} onPress={handleDone}>
-        <Text style={[styles.skipText, { color: colors.subtext }]}>{t('onboarding.skip')}</Text>
+        <Text style={[styles.skipText, { color: colors.textSecondary }]}>{t('onboarding.skip')}</Text>
       </TouchableOpacity>
 
-      <FlashList
+      <FlatList
         ref={flatListRef}
         data={slides}
         renderItem={renderSlide}
         keyExtractor={(item) => item.key}
-        estimatedItemSize={width}
+        style={styles.list}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         bounces={false}
+        decelerationRate="fast"
+        snapToInterval={width}
+        snapToAlignment="start"
+        getItemLayout={getItemLayout}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewConfigRef}
       />
@@ -124,9 +134,15 @@ export default function OnboardingScreen({ onDone }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  list: { flex: 1 },
   skipBtn: { position: 'absolute', top: 60, right: 24, zIndex: 10 },
   skipText: { fontSize: 16 },
-  slide: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
+  slide: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
   iconContainer: {
     width: 140,
     height: 140,

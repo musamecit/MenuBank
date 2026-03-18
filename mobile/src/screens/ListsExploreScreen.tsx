@@ -7,7 +7,6 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../context/ThemeContext';
@@ -30,8 +29,7 @@ export default function ListsExploreScreen() {
   const { t, i18n } = useTranslation();
   const { colors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const insets = useSafeAreaInsets();
-  const listPaddingBottom = BANNER_HEIGHT_TOTAL + insets.bottom + 20;
+  const listPaddingBottom = BANNER_HEIGHT_TOTAL + 8;
   const [lists, setLists] = useState<CuratedList[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

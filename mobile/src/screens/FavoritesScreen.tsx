@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -27,8 +26,7 @@ export default function FavoritesScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const navigation = useNavigation<Nav>();
-  const insets = useSafeAreaInsets();
-  const listPaddingBottom = BANNER_HEIGHT_TOTAL + insets.bottom + 20;
+  const listPaddingBottom = BANNER_HEIGHT_TOTAL + 8;
 
   const [tab, setTab] = useState<Tab>(initialTab);
   const [restaurants, setRestaurants] = useState<Record<string, unknown>[]>([]);

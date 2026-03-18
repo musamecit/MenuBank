@@ -48,6 +48,7 @@
   "restaurant": {
     "openMenu": "Güncel Menüyü Aç",
     "updateMenu": "Menüyü Güncelle",
+    "verifiedOwnerOnlyMessage": "Onaylanmış restoranlara sadece restoran sahibi menü ekleyebilir",
     "updateMenuWarning": "Güncel menü dışında yükleme yapan kullanıcılar ve kullanıcıların cihazları sistemde blokelenecek olup uygulamaya giriş yapmasına müsaade edilmeyecektir.",
     "reservation": "Rezervasyon Yap",
     "olderMenus": "Eski Menüler",
@@ -78,6 +79,8 @@
     "createNew": "Yeni Restoran Oluştur",
     "enterUrl": "Menü URL'si girin",
     "urlPlaceholder": "https://...",
+    "urlInvalidHint": "Geçerli bir menü linki girin (https:// ile başlamalı).",
+    "submitFailed": "Menü gönderilemedi. Linkin çalıştığından emin olun.",
     "selectCategory": "Kategori Seç",
     "submit": "MenuBank'e Ekle",
     "submitting": "Gönderiliyor...",
@@ -85,7 +88,16 @@
     "menuUnchanged": "Menü güncellendi",
     "loginRequired": "Menü eklemek için giriş yapın",
     "liveSearchHint": "Yazarken öneriler otomatik gelir",
-    "typeToSearch": "Restoran adı yazarak arayın"
+    "typeToSearch": "Restoran adı yazarak arayın",
+    "scanQR": "QR Kod Tara",
+    "scanQRHint": "QR kodu çerçeve içine getirin",
+    "invalidQR": "Geçersiz QR Kod",
+    "invalidQRMessage": "Bu QR kod bir menü linki içermiyor. Lütfen menü linki içeren bir QR kod tarayın.",
+    "cameraLoading": "Kamera yükleniyor...",
+    "cameraPermissionRequired": "Menü linkini almak için kameraya erişim izni gerekiyor.",
+    "cameraPermissionPermanentlyDenied": "Kamera izni reddedildi. Ayarlar'dan izin verebilirsiniz.",
+    "openSettings": "Ayarları Aç",
+    "cameraError": "Kamera açılamadı. Lütfen tekrar deneyin."
   },
   "profile": {
     "accountInfo": "Hesap bilgileriniz",
@@ -98,6 +110,7 @@
     "myFavorites": "Favorilerim",
     "myFollowings": "Takip Ettiklerim",
     "selectManageRestaurant": "Restoran Seç ve Yönet",
+    "restaurantSelect": "Restoran Seç",
     "getInviteCode": "Davet kodumu al",
     "haveCode": "Kodunuz mu var?",
     "useCode": "Kullan",
@@ -184,7 +197,10 @@
     "details": "Detay (isteğe bağlı)",
     "submit": "Bildir",
     "success": "Bildiriminiz alındı",
-    "loginRequired": "Bildirim için giriş yapın"
+    "alreadyReported": "Bu menüyü daha önce bildirdiniz",
+    "loginRequired": "Bildirim için giriş yapın",
+    "confirmTitle": "Menüyü Bildir",
+    "confirmMessage": "Bu menüyü bildirmek istediğinize emin misiniz?"
   },
   "lists": {
     "myLists": "Listelerim",
@@ -264,6 +280,7 @@
     "search": "Keşfet"
   },
   "common": {
+    "back": "Geri",
     "loading": "Yükleniyor...",
     "save": "Kaydet",
     "cancel": "Vazgeç",

@@ -7,13 +7,14 @@ import { FlashList } from '@shopify/flash-list';
 import { useNavigation } from '@react-navigation/native';
 import { type NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
-import { Search, Plus, Send } from 'lucide-react-native';
+import { Search, Plus, Send, Camera } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { searchPlaces } from '../services/googlePlaces';
-import { createRestaurant } from '../lib/restaurants';
 import { submitMenu } from '../lib/submitMenu';
+import { submitRestaurantWithMenu } from '../lib/submitRestaurantWithMenu';
 import { supabase } from '../lib/supabase';
+import QRScannerModal from '../components/QRScannerModal';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import type { ColorSet } from '../theme/colors';
 
@@ -58,6 +59,7 @@ export default function AddMenuScreen() {
   const [menuUrl, setMenuUrl] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [qrScannerVisible, setQrScannerVisible] = useState(false);
 
   const styles = useMemo(() => getStyles(colors), [colors]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,7 +100,7 @@ export default function AddMenuScreen() {
       .from('restaurants')
       .select('id')
       .eq('place_id', place.placeId)
-      .eq('status', 'active')
+      .in('status', ['active', 'disabled'])
       .is('deleted_at', null)
       .maybeSingle();
 
@@ -122,31 +124,30 @@ export default function AddMenuScreen() {
     const trimmed = menuUrl.trim();
     const isHttp = /^https?:\/\//i.test(trimmed);
     if (!isHttp) {
-      Alert.alert(t('errors.generic'), t('addMenu.urlPlaceholder'));
+      Alert.alert(t('errors.generic'), t('addMenu.urlInvalidHint'));
       return;
     }
     if (!selectedRestaurantId && !selectedPlace) return;
     setSubmitting(true);
     try {
-      let restaurantId = selectedRestaurantId;
-      if (selectedPlace && !restaurantId) {
+      let result: { status: string };
+      if (selectedPlace && !selectedRestaurantId) {
         const parts = selectedPlace.formattedAddress.split(',').map((s) => s.trim());
-        const created = await createRestaurant({
+        result = await submitRestaurantWithMenu({
           place_id: selectedPlace.placeId,
           name: selectedPlace.displayName,
           city_name: parts[parts.length - 2] ?? parts[0] ?? '',
           area_name: parts[0] ?? '',
           formatted_address: selectedPlace.formattedAddress,
           country_code: 'TR',
+          url: trimmed,
+          category_slug: selectedCategory,
         });
-        if (!created) {
-          Alert.alert(t('errors.generic'));
-          return;
-        }
-        restaurantId = created.id;
+      } else if (selectedRestaurantId) {
+        result = await submitMenu(selectedRestaurantId, trimmed, selectedCategory);
+      } else {
+        return;
       }
-      if (!restaurantId) return;
-      const result = await submitMenu(restaurantId, trimmed, selectedCategory);
       Alert.alert(result.status === 'unchanged' ? t('addMenu.menuUnchanged') : t('addMenu.success'));
       setStep('search');
       setQuery('');
@@ -155,7 +156,12 @@ export default function AddMenuScreen() {
       setSelectedPlace(null);
       setSelectedCategory(null);
     } catch (err) {
-      Alert.alert(t('errors.generic'), (err as Error).message);
+      const msg = (err as Error).message;
+      const userMsg =
+        msg === 'verified_restaurant_owner_only'
+          ? t('restaurant.verifiedOwnerOnlyMessage')
+          : msg;
+      Alert.alert(t('errors.generic'), userMsg);
     } finally {
       setSubmitting(false);
     }
@@ -223,14 +229,29 @@ export default function AddMenuScreen() {
         <View style={styles.content}>
           <Text style={styles.stepLabel}>{selectedName}</Text>
           <Text style={styles.urlLabel}>{t('addMenu.enterUrl')}</Text>
-          <TextInput
-            style={styles.urlInput}
-            placeholder={t('addMenu.urlPlaceholder')}
-            placeholderTextColor={colors.textSecondary}
-            value={menuUrl}
-            onChangeText={setMenuUrl}
-            keyboardType="url"
-            autoCapitalize="none"
+          <View style={styles.urlRow}>
+            <TextInput
+              style={[styles.urlInput, { flex: 1 }]}
+              placeholder={t('addMenu.urlPlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              value={menuUrl}
+              onChangeText={setMenuUrl}
+              keyboardType="url"
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={[styles.qrBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => setQrScannerVisible(true)}
+              accessibilityLabel={t('addMenu.scanQR')}
+              accessibilityRole="button"
+            >
+              <Camera size={24} color={colors.accent} />
+            </TouchableOpacity>
+          </View>
+          <QRScannerModal
+            visible={qrScannerVisible}
+            onClose={() => setQrScannerVisible(false)}
+            onScan={(url) => { setMenuUrl(url); setQrScannerVisible(false); }}
           />
           <Text style={[styles.urlLabel, { marginTop: 8 }]}>{t('addMenu.selectCategory')}</Text>
           <View style={styles.categoryRow}>
@@ -272,6 +293,7 @@ export default function AddMenuScreen() {
               setStep('search');
               setSelectedRestaurantId(null);
               setSelectedPlace(null);
+              setQrScannerVisible(false);
             }}
           >
             <Text style={styles.backText}>{t('common.cancel')}</Text>
@@ -305,9 +327,14 @@ function getStyles(colors: ColorSet) {
     liveSearchHint: { fontSize: 12, color: colors.textSecondary, marginBottom: 8 },
     emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 20 },
     urlLabel: { fontSize: 14, color: colors.textSecondary, marginBottom: 8 },
+    urlRow: { flexDirection: 'row', gap: 8, marginBottom: 16, alignItems: 'center' },
     urlInput: {
       backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14,
-      fontSize: 15, color: colors.text, borderWidth: 1, borderColor: colors.border, marginBottom: 16,
+      fontSize: 15, color: colors.text, borderWidth: 1, borderColor: colors.border,
+    },
+    qrBtn: {
+      width: 52, height: 52, borderRadius: 12, borderWidth: 1,
+      justifyContent: 'center', alignItems: 'center',
     },
     categoryRow: {
       flexDirection: 'row',

@@ -1,6 +1,22 @@
-# Günlük Kod Yedekleme Kurulumu
+# Günlük Kod Yedekleme (GitHub Actions)
 
-Bu yapı, kodlarınızın her gün otomatik olarak **sadece sizin görebileceğiniz** bir private GitHub repo'ya yedeklenmesini sağlar.
+Bu proje artık yedekleme işlemini yerel bilgisayarınız yerine **GitHub Actions** üzerinden bulut ortamında gerçekleştirmektedir. 
+
+## Avantajları
+- Bilgisayarınızın açık olmasına gerek yoktur.
+- macOS izin/güvenlik sorunlarından etkilenmez.
+- Tamamen otomatiktir.
+
+## Kurulum (Bir Kez Mahsus)
+1. GitHub'da bir **Personal Access Token (classic)** oluşturun (İzinler: `repo`).
+2. Ana reponuzun (QRMenu) **Settings > Secrets and variables > Actions** sayfasına gidin.
+3. **New repository secret** butonuna basın.
+4. Name: `BACKUP_TOKEN`, Value: (az önce oluşturduğunuz token).
+5. Artık her gece saat **00:01 (TR)**'de otomatik yedeklenecektir.
+
+---
+
+## [LEGACY] Yerel macOS Yedekleme (Tavsiye Edilmez)
 
 ## Adım 1: Private Backup Repo Oluşturma
 

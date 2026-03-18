@@ -4,11 +4,11 @@ import {
   ActivityIndicator, Alert, Linking, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   Heart, Share2, MapPin, BadgeCheck, ExternalLink, Flag, Star, UserPlus, UserMinus,
-  Phone, Utensils, RefreshCw,
+  Phone, Utensils, RefreshCw, Camera,
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -19,11 +19,12 @@ import { shareRestaurant } from '../lib/share';
 import { openInMaps, openUrl } from '../lib/linking';
 import { submitPriceVote, getUserVote, type PriceVoteValue } from '../lib/priceVote';
 import { submitMenu } from '../lib/submitMenu';
+import { submitReport } from '../lib/report';
 import { logRestaurantView } from '../lib/analytics';
 import { submitRestaurantClaim } from '../lib/ownerDashboard';
 import { Image } from 'expo-image';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeBannerAd, { BANNER_HEIGHT_TOTAL } from '../components/SafeBannerAd';
+import QRScannerModal from '../components/QRScannerModal';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import type { ColorSet } from '../theme/colors';
 
@@ -34,9 +35,9 @@ export default function RestaurantDetailScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const route = useRoute<RouteType>();
+  const queryClient = useQueryClient();
   const { restaurantId } = route.params;
-  const insets = useSafeAreaInsets();
-  const scrollPaddingBottom = BANNER_HEIGHT_TOTAL + insets.bottom + 40;
+  const scrollPaddingBottom = BANNER_HEIGHT_TOTAL + 12;
 
   const { data: restaurant, isLoading: loading } = useQuery({
     queryKey: ['restaurant', restaurantId],
@@ -54,6 +55,8 @@ export default function RestaurantDetailScreen() {
   const [updateMenuUrl, setUpdateMenuUrl] = useState('');
   const [updateSubmitting, setUpdateSubmitting] = useState(false);
   const [updateMenuInputVisible, setUpdateMenuInputVisible] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [qrScannerVisible, setQrScannerVisible] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const updateSectionY = useRef(0);
@@ -121,7 +124,7 @@ export default function RestaurantDetailScreen() {
     const trimmed = updateMenuUrl.trim();
     const isHttp = /^https?:\/\//i.test(trimmed);
     if (!isHttp) {
-      Alert.alert(t('errors.generic'), t('addMenu.urlPlaceholder'));
+      Alert.alert(t('errors.generic'), t('addMenu.urlInvalidHint'));
       return;
     }
     setUpdateSubmitting(true);
@@ -130,12 +133,51 @@ export default function RestaurantDetailScreen() {
       Alert.alert(result.status === 'unchanged' ? t('addMenu.menuUnchanged') : t('addMenu.success'));
       setUpdateMenuUrl('');
       setUpdateMenuInputVisible(false);
+      queryClient.invalidateQueries({ queryKey: ['menuEntries', restaurantId] });
     } catch (err) {
-      Alert.alert(t('errors.generic'), (err as Error).message);
+      const msg = (err as Error).message;
+      Alert.alert(
+        t('errors.generic'),
+        msg === 'verified_restaurant_owner_only' ? t('restaurant.verifiedOwnerOnlyMessage') : msg,
+      );
     } finally {
       setUpdateSubmitting(false);
     }
-  }, [user, restaurantId, updateMenuUrl, t]);
+  }, [user, restaurantId, updateMenuUrl, t, queryClient]);
+
+  const handleReportMenu = useCallback(() => {
+    if (!user) {
+      Alert.alert(t('report.loginRequired'));
+      return;
+    }
+    const menuId = menus[0]?.id;
+    if (!menuId) return;
+    Alert.alert(
+      t('report.confirmTitle'),
+      t('report.confirmMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('report.submit'),
+          onPress: async () => {
+            setReportLoading(true);
+            try {
+              const result = await submitReport(menuId, 'other');
+              if (result.status === 'already_reported') {
+                Alert.alert(t('report.alreadyReported'));
+              } else {
+                Alert.alert(t('report.success'));
+              }
+            } catch (err) {
+              Alert.alert(t('errors.generic'), (err as Error).message);
+            } finally {
+              setReportLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [user, menus, t]);
 
   const handleClaimConfirm = async () => {
     setClaimInfoVisible(false);
@@ -337,7 +379,7 @@ export default function RestaurantDetailScreen() {
           ) : (
             <View style={styles.updateRow}>
               <TextInput
-                style={styles.updateInput}
+                style={[styles.updateInput, { flex: 1 }]}
                 placeholder={t('addMenu.urlPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 value={updateMenuUrl}
@@ -346,6 +388,14 @@ export default function RestaurantDetailScreen() {
                 autoCapitalize="none"
                 onFocus={handleMenuInputFocus}
               />
+              <TouchableOpacity
+                style={[styles.qrBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => setQrScannerVisible(true)}
+                accessibilityLabel={t('addMenu.scanQR')}
+                accessibilityRole="button"
+              >
+                <Camera size={20} color={colors.accent} />
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[
                   styles.updateBtn,
@@ -366,9 +416,19 @@ export default function RestaurantDetailScreen() {
             </View>
           )}
           {currentMenu && (
-            <TouchableOpacity style={styles.reportBtn}>
-              <Flag size={14} color={colors.error} />
-              <Text style={styles.reportText}>{t('restaurant.reportMenu')}</Text>
+            <TouchableOpacity
+              style={styles.reportBtn}
+              onPress={handleReportMenu}
+              disabled={reportLoading}
+            >
+              {reportLoading ? (
+                <ActivityIndicator size="small" color={colors.error} />
+              ) : (
+                <>
+                  <Flag size={14} color={colors.error} />
+                  <Text style={styles.reportText}>{t('restaurant.reportMenu')}</Text>
+                </>
+              )}
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -379,6 +439,12 @@ export default function RestaurantDetailScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      <QRScannerModal
+        visible={qrScannerVisible}
+        onClose={() => setQrScannerVisible(false)}
+        onScan={(url) => { setUpdateMenuUrl(url); setQrScannerVisible(false); }}
+      />
     </ScrollView>
 
     <SafeBannerAd />
@@ -493,6 +559,10 @@ function getStyles(colors: ColorSet) {
     },
     updateMenuBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
     updateRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+    qrBtn: {
+      width: 44, height: 44, borderRadius: 10, borderWidth: 1,
+      justifyContent: 'center', alignItems: 'center',
+    },
     updateInput: {
       flex: 1, backgroundColor: colors.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
       fontSize: 14, color: colors.text, borderWidth: 1, borderColor: colors.border,

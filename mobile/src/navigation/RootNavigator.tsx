@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../context/ThemeContext';
 import { hasSeenOnboarding } from '../lib/onboarding';
 import TabNavigator from './TabNavigator';
@@ -14,6 +15,7 @@ import AddToListSearchScreen from '../screens/AddToListSearchScreen';
 import NotFoundScreen from '../screens/NotFoundScreen';
 import CityTrendScreen from '../screens/CityTrendScreen';
 import OwnerDashboardScreen from '../screens/OwnerDashboardScreen';
+import RestaurantSelectScreen from '../screens/RestaurantSelectScreen';
 import AdminScreen from '../screens/AdminScreen';
 import ListsExploreScreen from '../screens/ListsExploreScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
@@ -31,6 +33,7 @@ export type RootStackParamList = {
   NotFound: undefined;
   CityTrend: { country: string; city: string };
   OwnerDashboard: { restaurantId: string };
+  RestaurantSelect: undefined;
   Admin: undefined;
   ListsExplore: undefined;
   Favorites: { initialTab?: 'restaurants' | 'lists' };
@@ -40,6 +43,7 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
 
@@ -47,7 +51,7 @@ export default function RootNavigator() {
     let cancelled = false;
     const timeout = setTimeout(() => {
       if (!cancelled) setShowOnboarding(false);
-    }, 3000);
+    }, 1500);
     hasSeenOnboarding()
       .then((seen) => {
         cancelled = true;
@@ -95,7 +99,7 @@ export default function RootNavigator() {
         )}
       </Stack.Screen>
       <Stack.Screen name="Tabs" component={TabNavigator} options={{ headerShown: false }} />
-      <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={{ title: '' }} />
+      <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={{ title: '', headerBackTitle: t('common.back') }} />
       <Stack.Screen name="Search" component={SearchScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: '' }} />
       <Stack.Screen name="Auth" component={AuthScreen} options={{ presentation: 'modal', headerShown: false }} />
@@ -104,6 +108,7 @@ export default function RootNavigator() {
       <Stack.Screen name="NotFound" component={NotFoundScreen} options={{ title: '' }} />
       <Stack.Screen name="CityTrend" component={CityTrendScreen} options={{ title: '' }} />
       <Stack.Screen name="OwnerDashboard" component={OwnerDashboardScreen} options={{ title: '' }} />
+      <Stack.Screen name="RestaurantSelect" component={RestaurantSelectScreen} options={{ title: t('profile.restaurantSelect') }} />
       <Stack.Screen name="Admin" component={AdminScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ListsExplore" component={ListsExploreScreen} options={{ title: '' }} />
       <Stack.Screen name="Favorites" component={FavoritesScreen} options={{ title: '' }} />

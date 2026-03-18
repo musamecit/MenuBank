@@ -18,12 +18,12 @@ Deno.serve(async (req) => {
     return err400(req, 'place_id, name, city_name, area_name are required');
   }
 
-  // Check if restaurant already exists
+  // Check if restaurant already exists (including disabled - avoid duplicate for same place)
   const { data: existing } = await admin
     .from('restaurants')
     .select('id')
     .eq('place_id', placeId)
-    .eq('status', 'active')
+    .in('status', ['active', 'disabled'])
     .is('deleted_at', null)
     .maybeSingle();
 

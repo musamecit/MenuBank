@@ -26,6 +26,7 @@ export default {
         NSLocationWhenInUseUsageDescription: 'Show nearby restaurants on the map',
         NSLocationAlwaysUsageDescription: 'Allow QRMenu to access your location',
         NSLocationAlwaysAndWhenInUseUsageDescription: 'Allow QRMenu to access your location',
+        NSCameraUsageDescription: 'Menü linkini almak için QR kodu taramanız gerekiyor.',
         NSUserTrackingUsageDescription:
           'We use this to aggregation-only analytics: anonymous counts for search and trends. No individual tracking.',
         GADApplicationIdentifier: 'ca-app-pub-6812424036943781~5306658061',
@@ -49,6 +50,7 @@ export default {
       permissions: [
         'android.permission.ACCESS_COARSE_LOCATION',
         'android.permission.ACCESS_FINE_LOCATION',
+        'android.permission.CAMERA',
       ],
       package: 'com.musamecit.qrmenu',
     },
@@ -58,6 +60,7 @@ export default {
     platforms: ['ios', 'android'],
     plugins: [
       'expo-image',
+      ['expo-camera', { cameraPermission: 'Menü linkini almak için QR kodu taramanız gerekiyor.', barcodeScannerEnabled: true }],
       'expo-web-browser',
       ['expo-location', { locationWhenInUsePermission: 'Show nearby restaurants on the map' }],
       'expo-notifications',

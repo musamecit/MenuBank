@@ -3,13 +3,17 @@ import * as Notifications from 'expo-notifications';
 import { supabase } from './supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/env';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+} catch {
+  // Bazı ortamlarda başlangıçta hata verebilir
+}
 
 export async function registerPushToken(userId: string) {
   const { status: existing } = await Notifications.getPermissionsAsync();

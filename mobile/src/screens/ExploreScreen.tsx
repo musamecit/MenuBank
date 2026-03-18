@@ -3,16 +3,14 @@ import React, {
 } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
-  RefreshControl, Dimensions, Modal, ScrollView, Platform,
+  RefreshControl, Dimensions, Modal, ScrollView,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
-import { Picker } from '@react-native-picker/picker';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { type NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Search, SlidersHorizontal, Heart } from 'lucide-react-native';
+import { Search, SlidersHorizontal, Heart, ChevronDown } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -42,7 +40,6 @@ const RestaurantMarker = React.memo(
       coordinate={{ latitude: Number(r.lat), longitude: Number(r.lng) }}
       title={r.name}
       description={r.area_name ? `${r.area_name}, ${r.city_name}` : r.city_name}
-      onPress={() => onPress(r.id)}
       onCalloutPress={() => onPress(r.id)}
       tracksViewChanges={false}
     />
@@ -57,9 +54,10 @@ export default function ExploreScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<Nav>();
   const mapRef = useRef<MapView>(null);
+  const listRef = useRef<{ scrollToOffset: (opts: { offset: number; animated?: boolean }) => void } | null>(null);
+  const scrollToTopAfterRegionChangeRef = useRef(false);
   const queryClient = useQueryClient();
-  const insets = useSafeAreaInsets();
-  const listPaddingBottom = BANNER_HEIGHT_TOTAL + insets.bottom;
+  const listPaddingBottom = BANNER_HEIGHT_TOTAL + 8;
 
   const [subTab, setSubTab] = useState<SubTab>('nearby');
   const [priceFilter, setPriceFilter] = useState<PriceFilter>('all');
@@ -69,6 +67,7 @@ export default function ExploreScreen() {
   const [area, setArea] = useState<Area | null>(null);
   const [categorySlug, setCategorySlug] = useState<string | null>(null);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState<'country' | 'city' | 'district' | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const regionFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -135,6 +134,7 @@ export default function ExploreScreen() {
   }, [location, priceFilter, distanceFilter, countryCode, city, area, categorySlug]);
 
   const loadForMapRegion = useCallback(async (region: Region) => {
+    scrollToTopAfterRegionChangeRef.current = true;
     const radius = radiusFromLatitudeDelta(region.latitudeDelta);
     try {
       const data = await fetchNearby(region.latitude, region.longitude, radius, {
@@ -146,9 +146,17 @@ export default function ExploreScreen() {
       });
       setNearby(data);
     } catch {
+      scrollToTopAfterRegionChangeRef.current = false;
       // Sessizce devam et - harita flicker için setLoading kullanmıyoruz
     }
   }, [priceFilter, countryCode, city, area, categorySlug]);
+
+  // Harita bölge değişince liste otomatik scroll yapmasın - haritayı görünür tut
+  useEffect(() => {
+    if (!scrollToTopAfterRegionChangeRef.current || !listRef.current) return;
+    scrollToTopAfterRegionChangeRef.current = false;
+    listRef.current.scrollToOffset({ offset: 0, animated: false });
+  }, [nearby]);
 
   useEffect(() => {
     if (subTab === 'nearby' && location) loadNearby();
@@ -292,42 +300,28 @@ export default function ExploreScreen() {
             <Text style={styles.modalTitle}>{t('explore.filterTitle')}</Text>
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <Text style={styles.modalLabel}>{t('explore.filterCountry')}</Text>
-              <View style={[styles.pickerWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Picker
-                  selectedValue={countryCode ?? ''}
-                  onValueChange={(v) => setCountryCode(v ? String(v) : null)}
-                  style={[styles.picker, { color: colors.text }]}
-                  prompt={t('explore.filterCountry')}
-                  mode={Platform.OS === 'ios' ? 'dialog' : 'dropdown'}
-                >
-                  <Picker.Item label={t('explore.filterAll')} value="" />
-                  {countries.map((c) => (
-                    <Picker.Item key={c.code} label={c.name} value={c.code} />
-                  ))}
-                </Picker>
-              </View>
+              <TouchableOpacity
+                style={[styles.selectRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => setPickerOpen('country')}
+              >
+                <Text style={[styles.selectRowText, { color: colors.text }]}>
+                  {countryCode ? countries.find((c) => c.code === countryCode)?.name ?? countryCode : t('explore.filterAll')}
+                </Text>
+                <ChevronDown size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
               <Text style={styles.modalLabel}>{t('explore.filterCity')}</Text>
-              <View style={[styles.pickerWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Picker
-                  selectedValue={city?.id ?? ''}
-                  onValueChange={(v) => {
-                    const c = cities.find((x) => x.id === v);
-                    setCity(c ?? null);
-                  }}
-                  style={[styles.picker, { color: colors.text }]}
-                  prompt={t('explore.filterCity')}
-                  mode={Platform.OS === 'ios' ? 'dialog' : 'dropdown'}
-                  enabled={!!countryCode && cities.length > 0}
-                >
-                  <Picker.Item
-                    label={!countryCode ? t('explore.filterCityHint') : cities.length === 0 ? t('common.loading') : t('explore.filterAll')}
-                    value=""
-                  />
-                  {cities.map((c) => (
-                    <Picker.Item key={c.id} label={c.name} value={c.id} />
-                  ))}
-                </Picker>
-              </View>
+              <TouchableOpacity
+                style={[styles.selectRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => countryCode && cities.length > 0 && setPickerOpen('city')}
+                disabled={!countryCode || cities.length === 0}
+              >
+                <Text style={[styles.selectRowText, { color: (!countryCode || cities.length === 0) ? colors.textSecondary : colors.text }]}>
+                  {!countryCode ? t('explore.filterCityHint') : cities.length === 0 ? t('common.loading') : city?.name ?? t('explore.filterAll')}
+                </Text>
+                <ChevronDown size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
               {city && countryCode && (
                 <TouchableOpacity
                   style={[styles.modalChip, { marginTop: 8, alignSelf: 'flex-start', backgroundColor: colors.accentMuted }]}
@@ -341,25 +335,18 @@ export default function ExploreScreen() {
                   </Text>
                 </TouchableOpacity>
               )}
+
               <Text style={styles.modalLabel}>{t('explore.filterDistrict')}</Text>
-              <View style={[styles.pickerWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Picker
-                  selectedValue={area?.id ?? ''}
-                  onValueChange={(v) => {
-                    const a = areas.find((x) => x.id === v);
-                    setArea(a ?? null);
-                  }}
-                  style={[styles.picker, { color: colors.text }]}
-                  prompt={t('explore.filterDistrict')}
-                  mode={Platform.OS === 'ios' ? 'dialog' : 'dropdown'}
-                  enabled={!!city && areas.length > 0}
-                >
-                  <Picker.Item label={!city ? t('explore.filterDistrictHint') : areas.length === 0 ? t('explore.noAreas') : t('explore.filterAll')} value="" />
-                  {areas.map((a) => (
-                    <Picker.Item key={a.id} label={a.name} value={a.id} />
-                  ))}
-                </Picker>
-              </View>
+              <TouchableOpacity
+                style={[styles.selectRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => city && areas.length > 0 && setPickerOpen('district')}
+                disabled={!city || areas.length === 0}
+              >
+                <Text style={[styles.selectRowText, { color: (!city || areas.length === 0) ? colors.textSecondary : colors.text }]}>
+                  {!city ? t('explore.filterDistrictHint') : areas.length === 0 ? t('explore.noAreas') : area?.name ?? t('explore.filterAll')}
+                </Text>
+                <ChevronDown size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
               <Text style={styles.modalLabel}>{t('explore.filterDistance')}</Text>
               <View style={styles.modalRow}>
                 {([1000, 3000, 5000] as DistanceFilter[]).map((d) => {
@@ -453,6 +440,86 @@ export default function ExploreScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* Option picker modal (country / city / district) */}
+      <Modal visible={!!pickerOpen} animationType="slide" transparent>
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setPickerOpen(null)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+            style={[styles.pickerModalContent, { backgroundColor: colors.surface }]}
+          >
+            <Text style={[styles.pickerModalTitle, { color: colors.text }]}>
+              {pickerOpen === 'country' && t('explore.filterCountry')}
+              {pickerOpen === 'city' && t('explore.filterCity')}
+              {pickerOpen === 'district' && t('explore.filterDistrict')}
+            </Text>
+            <ScrollView style={styles.pickerModalList} showsVerticalScrollIndicator={false}>
+              {pickerOpen === 'country' && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.pickerOption, { borderColor: colors.border }]}
+                    onPress={() => { setCountryCode(null); setCity(null); setArea(null); setPickerOpen(null); }}
+                  >
+                    <Text style={[styles.pickerOptionText, { color: colors.text }]}>{t('explore.filterAll')}</Text>
+                  </TouchableOpacity>
+                  {countries.map((c) => (
+                    <TouchableOpacity
+                      key={c.code}
+                      style={[styles.pickerOption, { borderColor: colors.border }]}
+                      onPress={() => { setCountryCode(c.code); setCity(null); setArea(null); setPickerOpen(null); }}
+                    >
+                      <Text style={[styles.pickerOptionText, { color: colors.text }]}>{c.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+              {pickerOpen === 'city' && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.pickerOption, { borderColor: colors.border }]}
+                    onPress={() => { setCity(null); setArea(null); setPickerOpen(null); }}
+                  >
+                    <Text style={[styles.pickerOptionText, { color: colors.text }]}>{t('explore.filterAll')}</Text>
+                  </TouchableOpacity>
+                  {cities.map((c) => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.pickerOption, { borderColor: colors.border }]}
+                      onPress={() => { setCity(c); setArea(null); setPickerOpen(null); }}
+                    >
+                      <Text style={[styles.pickerOptionText, { color: colors.text }]}>{c.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+              {pickerOpen === 'district' && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.pickerOption, { borderColor: colors.border }]}
+                    onPress={() => { setArea(null); setPickerOpen(null); }}
+                  >
+                    <Text style={[styles.pickerOptionText, { color: colors.text }]}>{t('explore.filterAll')}</Text>
+                  </TouchableOpacity>
+                  {areas.map((a) => (
+                    <TouchableOpacity
+                      key={a.id}
+                      style={[styles.pickerOption, { borderColor: colors.border }]}
+                      onPress={() => { setArea(a); setPickerOpen(null); }}
+                    >
+                      <Text style={[styles.pickerOptionText, { color: colors.text }]}>{a.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+            </ScrollView>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Sub-tabs + Filter icon */}
       <View style={styles.tabRow}>
         {(['nearby', 'lists', 'favorites'] as SubTab[]).map((tab) => {
@@ -487,6 +554,7 @@ export default function ExploreScreen() {
         <View style={{ flex: 1 }}>
           {subTab === 'nearby' ? (
             <FlashList
+              ref={listRef}
               style={{ flex: 1 }}
               data={nearby}
               keyExtractor={(item) => item.id}
@@ -525,7 +593,7 @@ export default function ExploreScreen() {
                 )
               }
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-              contentContainerStyle={{ paddingBottom: listPaddingBottom + 12, flexGrow: 1 }}
+              contentContainerStyle={{ paddingBottom: listPaddingBottom, flexGrow: 1 }}
             />
           ) : subTab === 'lists' ? (
             <FlashList
@@ -563,7 +631,7 @@ export default function ExploreScreen() {
               }}
               ListEmptyComponent={<Text style={styles.emptyText}>{t('explore.noLists')}</Text>}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-              contentContainerStyle={{ paddingBottom: listPaddingBottom + 12 }}
+              contentContainerStyle={{ paddingBottom: listPaddingBottom }}
             />
           ) : subTab === 'favorites' ? (
             !user ? (
@@ -581,7 +649,7 @@ export default function ExploreScreen() {
                 renderItem={renderFavItem}
                 ListEmptyComponent={<Text style={styles.emptyText}>{t('explore.noFavorites')}</Text>}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-                contentContainerStyle={{ paddingBottom: listPaddingBottom + 12 }}
+                contentContainerStyle={{ paddingBottom: listPaddingBottom }}
               />
             )
           ) : null}
@@ -708,13 +776,34 @@ function getStyles(colors: ColorSet) {
     },
     modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12, color: colors.text },
     modalLabel: { fontSize: 14, fontWeight: '600', marginTop: 8, marginBottom: 4, color: colors.text },
-    pickerWrap: {
+    selectRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 14,
+      paddingVertical: 12,
       borderRadius: 12,
       borderWidth: 1,
       marginBottom: 4,
-      overflow: 'hidden',
     },
-    picker: { height: Platform.OS === 'ios' ? 120 : 48 },
+    selectRowText: { fontSize: 15 },
+    pickerModalContent: {
+      alignSelf: 'stretch',
+      marginHorizontal: 16,
+      marginBottom: 40,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      padding: 16,
+      maxHeight: 320,
+    },
+    pickerModalTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
+    pickerModalList: { maxHeight: 260 },
+    pickerOption: {
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+    },
+    pickerOptionText: { fontSize: 15 },
     modalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     modalChip: {
       paddingHorizontal: 10,

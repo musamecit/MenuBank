@@ -31,30 +31,40 @@ export async function fetchOwnerDashboard(restaurantId: string): Promise<OwnerDa
 }
 
 async function fetchDashboardDirect(restaurantId: string): Promise<OwnerDashboardData | null> {
-  const { data: restaurant } = await supabase
-    .from('restaurants')
-    .select('id, name, city_name, area_name, image_url, is_verified, contact_phone, reservation_url, formatted_address')
-    .eq('id', restaurantId)
-    .maybeSingle();
-  if (!restaurant) return null;
+  try {
+    const { data: restaurant } = await supabase
+      .from('restaurants')
+      .select('id, name, city_name, area_name, image_url, is_verified, contact_phone, reservation_url, formatted_address')
+      .eq('id', restaurantId)
+      .maybeSingle();
+    if (!restaurant) return null;
 
-  const { count: menuCount } = await supabase
-    .from('menu_entries')
-    .select('id', { count: 'exact', head: true })
-    .eq('restaurant_id', restaurantId)
-    .eq('verification_status', 'approved');
+    const { count: menuCount } = await supabase
+      .from('menu_entries')
+      .select('id', { count: 'exact', head: true })
+      .eq('restaurant_id', restaurantId)
+      .eq('verification_status', 'approved');
 
-  const { data: vc } = await supabase
-    .from('restaurant_view_count')
-    .select('view_count')
-    .eq('restaurant_id', restaurantId)
-    .maybeSingle();
+    let viewCount = 0;
+    try {
+      const { data: vc } = await supabase
+        .from('restaurant_view_count')
+        .select('view_count')
+        .eq('restaurant_id', restaurantId)
+        .maybeSingle();
+      viewCount = (vc as { view_count: number } | null)?.view_count ?? 0;
+    } catch {
+      // restaurant_view_count may not exist
+    }
 
-  return {
-    restaurant: restaurant as OwnerDashboardData['restaurant'],
-    menuCount: menuCount ?? 0,
-    viewCount: (vc as { view_count: number } | null)?.view_count ?? 0,
-  };
+    return {
+      restaurant: restaurant as OwnerDashboardData['restaurant'],
+      menuCount: menuCount ?? 0,
+      viewCount,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function updateOwnerRestaurant(

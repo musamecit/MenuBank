@@ -48,6 +48,7 @@
   "restaurant": {
     "openMenu": "Open Current Menu",
     "updateMenu": "Update Menu",
+    "verifiedOwnerOnlyMessage": "Only the restaurant owner can add menus to verified restaurants",
     "updateMenuWarning": "Users who load menus other than the current menu and their devices will be blocked from the system and will not be allowed to log in to the application.",
     "reservation": "Make a Reservation",
     "olderMenus": "Older Menus",
@@ -78,6 +79,8 @@
     "createNew": "Create New Restaurant",
     "enterUrl": "Enter menu URL",
     "urlPlaceholder": "https://...",
+    "urlInvalidHint": "Enter a valid menu link (must start with https://).",
+    "submitFailed": "Menu could not be submitted. Make sure the link works.",
     "selectCategory": "Select Category",
     "submit": "Add to MenuBank",
     "submitting": "Submitting...",
@@ -85,6 +88,15 @@
     "menuUnchanged": "Menu updated",
     "loginRequired": "Sign in to add a menu",
     "liveSearchHint": "Suggestions appear as you type",
+    "scanQR": "Scan QR Code",
+    "scanQRHint": "Position the QR code within the frame",
+    "invalidQR": "Invalid QR Code",
+    "invalidQRMessage": "This QR code does not contain a menu link. Please scan a QR code that contains a menu URL.",
+    "cameraLoading": "Loading camera...",
+    "cameraPermissionRequired": "Camera access is required to get the menu link.",
+    "cameraPermissionPermanentlyDenied": "Camera permission was denied. You can enable it in Settings.",
+    "openSettings": "Open Settings",
+    "cameraError": "Camera could not be opened. Please try again.",
     "typeToSearch": "Type a restaurant name to search"
   },
   "profile": {
@@ -98,6 +110,7 @@
     "myFavorites": "My Favorites",
     "myFollowings": "My Followings",
     "selectManageRestaurant": "Select and Manage Restaurant",
+    "restaurantSelect": "Select Restaurant",
     "getInviteCode": "Get my invitation code",
     "haveCode": "Do you have a code?",
     "useCode": "Use",
@@ -184,7 +197,10 @@
     "details": "Details (optional)",
     "submit": "Report",
     "success": "Your report has been received",
-    "loginRequired": "Sign in to report"
+    "alreadyReported": "You have already reported this menu",
+    "loginRequired": "Sign in to report",
+    "confirmTitle": "Report Menu",
+    "confirmMessage": "Are you sure you want to report this menu?"
   },
   "lists": {
     "myLists": "My Lists",
@@ -264,6 +280,7 @@
     "search": "Explore"
   },
   "common": {
+    "back": "Back",
     "loading": "Loading...",
     "save": "Save",
     "cancel": "Cancel",
