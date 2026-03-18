@@ -1,0 +1,50 @@
+{
+  "name": "menubank",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-picker/picker": "^2.11.4",
+    "@react-navigation/bottom-tabs": "^7.2.0",
+    "@react-navigation/native": "^7.0.0",
+    "@react-navigation/native-stack": "^7.2.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "@tanstack/react-query": "^5.90.21",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "expo": "^55.0.6",
+    "expo-apple-authentication": "~55.0.8",
+    "expo-auth-session": "~55.0.8",
+    "expo-crypto": "~55.0.9",
+    "expo-image": "~55.0.6",
+    "expo-linking": "~55.0.7",
+    "expo-location": "~55.1.2",
+    "expo-notifications": "~55.0.12",
+    "expo-secure-store": "~55.0.8",
+    "expo-splash-screen": "^55.0.11",
+    "expo-status-bar": "~55.0.4",
+    "expo-web-browser": "~55.0.9",
+    "i18next": "^24.2.2",
+    "lucide-react-native": "^0.577.0",
+    "react": "19.2.0",
+    "react-compiler-runtime": "^1.0.0",
+    "react-i18next": "^15.4.1",
+    "react-native": "0.83.2",
+    "react-native-maps": "1.26.20",
+    "react-native-reanimated": "4.2.1",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0",
+    "react-native-svg": "15.15.3",
+    "react-native-url-polyfill": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.0.10",
+    "typescript": "^5.3.0"
+  },
+  "private": true
+}

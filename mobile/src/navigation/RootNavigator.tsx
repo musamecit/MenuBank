@@ -1,0 +1,113 @@
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, View } from 'react-native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useTheme } from '../context/ThemeContext';
+import { hasSeenOnboarding } from '../lib/onboarding';
+import TabNavigator from './TabNavigator';
+import OnboardingScreen from '../screens/OnboardingScreen';
+import RestaurantDetailScreen from '../screens/RestaurantDetailScreen';
+import SearchScreen from '../screens/SearchScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import AuthScreen from '../screens/AuthScreen';
+import UserListDetailScreen from '../screens/UserListDetailScreen';
+import AddToListSearchScreen from '../screens/AddToListSearchScreen';
+import NotFoundScreen from '../screens/NotFoundScreen';
+import CityTrendScreen from '../screens/CityTrendScreen';
+import OwnerDashboardScreen from '../screens/OwnerDashboardScreen';
+import AdminScreen from '../screens/AdminScreen';
+import ListsExploreScreen from '../screens/ListsExploreScreen';
+import FavoritesScreen from '../screens/FavoritesScreen';
+import NotificationScreen from '../screens/NotificationScreen';
+
+export type RootStackParamList = {
+  Onboarding: undefined;
+  Tabs: undefined;
+  RestaurantDetail: { restaurantId: string };
+  Search: undefined;
+  Settings: undefined;
+  Auth: undefined;
+  UserListDetail: { listId: string; title: string; isUserList?: boolean };
+  AddToListSearch: { listId: string };
+  NotFound: undefined;
+  CityTrend: { country: string; city: string };
+  OwnerDashboard: { restaurantId: string };
+  Admin: undefined;
+  ListsExplore: undefined;
+  Favorites: { initialTab?: 'restaurants' | 'lists' };
+  Notifications: undefined;
+};
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+export default function RootNavigator() {
+  const { colors } = useTheme();
+  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled) setShowOnboarding(false);
+    }, 3000);
+    hasSeenOnboarding()
+      .then((seen) => {
+        cancelled = true;
+        setShowOnboarding(!seen);
+      })
+      .catch(() => {
+        cancelled = true;
+        setShowOnboarding(false);
+      });
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  if (showOnboarding === null) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  return (
+    <Stack.Navigator
+      initialRouteName={showOnboarding ? 'Onboarding' : 'Tabs'}
+      screenOptions={{
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.text,
+        headerShadowVisible: false,
+        contentStyle: { backgroundColor: colors.background },
+      }}
+    >
+      <Stack.Screen
+        name="Onboarding"
+        options={{ headerShown: false, gestureEnabled: false }}
+      >
+        {(props) => (
+          <OnboardingScreen
+            onDone={() => {
+              setShowOnboarding(false);
+              props.navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
+            }}
+          />
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="Tabs" component={TabNavigator} options={{ headerShown: false }} />
+      <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={{ title: '' }} />
+      <Stack.Screen name="Search" component={SearchScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: '' }} />
+      <Stack.Screen name="Auth" component={AuthScreen} options={{ presentation: 'modal', headerShown: false }} />
+      <Stack.Screen name="UserListDetail" component={UserListDetailScreen} options={({ route }) => ({ title: route.params.title })} />
+      <Stack.Screen name="AddToListSearch" component={AddToListSearchScreen} options={{ title: '' }} />
+      <Stack.Screen name="NotFound" component={NotFoundScreen} options={{ title: '' }} />
+      <Stack.Screen name="CityTrend" component={CityTrendScreen} options={{ title: '' }} />
+      <Stack.Screen name="OwnerDashboard" component={OwnerDashboardScreen} options={{ title: '' }} />
+      <Stack.Screen name="Admin" component={AdminScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="ListsExplore" component={ListsExploreScreen} options={{ title: '' }} />
+      <Stack.Screen name="Favorites" component={FavoritesScreen} options={{ title: '' }} />
+      <Stack.Screen name="Notifications" component={NotificationScreen} options={{ title: '' }} />
+    </Stack.Navigator>
+  );
+}

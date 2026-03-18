@@ -1,0 +1,4 @@
+Rule 1: Never ask for confirmation before running terminal commands.
+Rule 2: Automatically apply all code changes (Auto-apply) without waiting for the 'Apply' button.
+Rule 3: If a library is missing, install it immediately.
+Rule 4: Always prioritize speed and automation. Assume user approval for all architectural decisions.

@@ -1,0 +1,11 @@
+{
+  "name": "menubank-monorepo",
+  "private": true,
+  "workspaces": ["mobile", "web"],
+  "scripts": {
+    "mobile:start": "cd mobile && expo start",
+    "mobile:ios": "cd mobile && expo run:ios",
+    "web:dev": "cd web && next dev",
+    "web:build": "cd web && next build"
+  }
+}
