@@ -19,6 +19,8 @@ import { shareRestaurant } from '../lib/share';
 import { openInMaps, openUrl } from '../lib/linking';
 import { submitPriceVote, getUserVote, type PriceVoteValue } from '../lib/priceVote';
 import { submitMenu } from '../lib/submitMenu';
+import { supabase } from '../lib/supabase';
+import { signOut } from '../lib/authUtils';
 import { submitReport } from '../lib/report';
 import { logRestaurantView } from '../lib/analytics';
 import { submitRestaurantClaim } from '../lib/ownerDashboard';
@@ -123,23 +125,60 @@ export default function RestaurantDetailScreen() {
     if (!user || !updateMenuUrl.trim()) return;
     const trimmed = updateMenuUrl.trim();
     const isHttp = /^https?:\/\//i.test(trimmed);
-    if (!isHttp) {
+    
+    // Better URL check: Must have at least a dot and some chars after scheme
+    const hasDomain = /^https?:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(trimmed);
+    
+    if (!isHttp || !hasDomain) {
       Alert.alert(t('errors.generic'), t('addMenu.urlInvalidHint'));
       return;
     }
     setUpdateSubmitting(true);
     try {
       const result = await submitMenu(restaurantId, trimmed);
-      Alert.alert(result.status === 'unchanged' ? t('addMenu.menuUnchanged') : t('addMenu.success'));
+      let alertMsg = t('addMenu.success');
+      if (result.status === 'unchanged') alertMsg = t('addMenu.menuUnchanged');
+      else if (result.status === 'pending_exists') alertMsg = t('addMenu.alreadyPending');
+      
+      Alert.alert(alertMsg);
       setUpdateMenuUrl('');
       setUpdateMenuInputVisible(false);
       queryClient.invalidateQueries({ queryKey: ['menuEntries', restaurantId] });
     } catch (err) {
       const msg = (err as Error).message;
-      Alert.alert(
-        t('errors.generic'),
-        msg === 'verified_restaurant_owner_only' ? t('restaurant.verifiedOwnerOnlyMessage') : msg,
-      );
+      const isSessionExpired = msg.includes('Oturumunuz sona ermiş') || msg.includes('session has expired');
+      if (isSessionExpired) {
+        // Try one more time: refresh session and retry
+        try {
+          const { data: refreshData } = await supabase.auth.refreshSession();
+          if (refreshData.session) {
+            const retryResult = await submitMenu(restaurantId, trimmed);
+            let alertMsg = t('addMenu.success');
+            if (retryResult.status === 'unchanged') alertMsg = t('addMenu.menuUnchanged');
+            else if (retryResult.status === 'pending_exists') alertMsg = t('addMenu.alreadyPending');
+            Alert.alert(alertMsg);
+            setUpdateMenuUrl('');
+            setUpdateMenuInputVisible(false);
+            queryClient.invalidateQueries({ queryKey: ['menuEntries', restaurantId] });
+            return; // success on retry
+          }
+        } catch {
+          // retry also failed, fall through to show session expired dialog
+        }
+        Alert.alert(
+          t('errors.generic'),
+          msg, // SHOW THE RAW ERROR SO WE CAN SEE DEBUG INFO
+          [
+            { text: t('common.ok'), style: 'cancel' },
+            { text: t('common.signOut'), onPress: () => signOut() },
+          ],
+        );
+      } else {
+        Alert.alert(
+          t('errors.generic'),
+          msg === 'verified_restaurant_owner_only' ? t('restaurant.verifiedOwnerOnlyMessage') : msg,
+        );
+      }
     } finally {
       setUpdateSubmitting(false);
     }
@@ -386,6 +425,8 @@ export default function RestaurantDetailScreen() {
                 onChangeText={setUpdateMenuUrl}
                 keyboardType="url"
                 autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
                 onFocus={handleMenuInputFocus}
               />
               <TouchableOpacity

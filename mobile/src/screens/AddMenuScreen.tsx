@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { searchPlaces } from '../services/googlePlaces';
 import { submitMenu } from '../lib/submitMenu';
 import { submitRestaurantWithMenu } from '../lib/submitRestaurantWithMenu';
+import { signOut } from '../lib/authUtils';
 import { supabase } from '../lib/supabase';
 import QRScannerModal from '../components/QRScannerModal';
 import type { RootStackParamList } from '../navigation/RootNavigator';
@@ -123,7 +124,11 @@ export default function AddMenuScreen() {
     }
     const trimmed = menuUrl.trim();
     const isHttp = /^https?:\/\//i.test(trimmed);
-    if (!isHttp) {
+    
+    // Better URL check: Must have at least a dot and some chars after scheme
+    const hasDomain = /^https?:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(trimmed);
+
+    if (!isHttp || !hasDomain) {
       Alert.alert(t('errors.generic'), t('addMenu.urlInvalidHint'));
       return;
     }
@@ -148,7 +153,11 @@ export default function AddMenuScreen() {
       } else {
         return;
       }
-      Alert.alert(result.status === 'unchanged' ? t('addMenu.menuUnchanged') : t('addMenu.success'));
+      let alertMsg = t('addMenu.success');
+      if (result.status === 'unchanged') alertMsg = t('addMenu.menuUnchanged');
+      else if (result.status === 'pending_exists') alertMsg = t('addMenu.alreadyPending');
+
+      Alert.alert(alertMsg);
       setStep('search');
       setQuery('');
       setMenuUrl('');
@@ -157,11 +166,60 @@ export default function AddMenuScreen() {
       setSelectedCategory(null);
     } catch (err) {
       const msg = (err as Error).message;
-      const userMsg =
-        msg === 'verified_restaurant_owner_only'
-          ? t('restaurant.verifiedOwnerOnlyMessage')
-          : msg;
-      Alert.alert(t('errors.generic'), userMsg);
+      const isSessionExpired = msg.includes('Oturumunuz sona ermiş') || msg.includes('session has expired');
+      if (isSessionExpired) {
+        // Try one more time: refresh session and retry
+        try {
+          const { data: refreshData } = await supabase.auth.refreshSession();
+          if (refreshData.session) {
+            let retryResult: { status: string };
+            if (selectedPlace && !selectedRestaurantId) {
+              const parts = selectedPlace.formattedAddress.split(',').map((s) => s.trim());
+              retryResult = await submitRestaurantWithMenu({
+                place_id: selectedPlace.placeId,
+                name: selectedPlace.displayName,
+                city_name: parts[parts.length - 2] ?? parts[0] ?? '',
+                area_name: parts[0] ?? '',
+                formatted_address: selectedPlace.formattedAddress,
+                country_code: 'TR',
+                url: trimmed,
+                category_slug: selectedCategory!,
+              });
+            } else if (selectedRestaurantId) {
+              retryResult = await submitMenu(selectedRestaurantId, trimmed, selectedCategory!);
+            } else {
+              throw new Error('no restaurant');
+            }
+            let alertMsg = t('addMenu.success');
+            if (retryResult.status === 'unchanged') alertMsg = t('addMenu.menuUnchanged');
+            else if (retryResult.status === 'pending_exists') alertMsg = t('addMenu.alreadyPending');
+            Alert.alert(alertMsg);
+            setStep('search');
+            setQuery('');
+            setMenuUrl('');
+            setSelectedRestaurantId(null);
+            setSelectedPlace(null);
+            setSelectedCategory(null);
+            return; // success on retry
+          }
+        } catch {
+          // retry also failed, fall through to show session expired dialog
+        }
+        Alert.alert(
+          t('errors.generic'),
+          msg, // SHOW THE RAW ERROR SO WE CAN SEE DEBUG INFO
+          [
+            { text: t('common.ok'), style: 'cancel' },
+            { text: t('common.signOut'), onPress: () => signOut() },
+          ],
+        );
+      } else {
+        const userMsg =
+          msg === 'verified_restaurant_owner_only'
+            ? t('restaurant.verifiedOwnerOnlyMessage')
+            : msg;
+        Alert.alert(t('errors.generic'), userMsg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -238,6 +296,8 @@ export default function AddMenuScreen() {
               onChangeText={setMenuUrl}
               keyboardType="url"
               autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
             />
             <TouchableOpacity
               style={[styles.qrBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}

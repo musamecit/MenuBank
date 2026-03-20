@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
       restaurant_id: restaurantId,
       url,
       submitted_by: user.id,
-      verification_status: 'pending',
+      verification_status: isAdmin ? 'approved' : 'pending',
     }).select('id, verification_status').single();
     if (menuErr) {
       const msg = menuErr.message || 'Veritabanı hatası';
@@ -118,48 +118,74 @@ Deno.serve(async (req) => {
     return jsonResponse({ id: (entry as { id: string }).id, status: (entry as { verification_status: string }).verification_status });
   }
 
-  // 3. Restoran oluştur
-  const insertData: Record<string, unknown> = {
-    place_id: placeId,
-    name,
-    city_name: cityName,
-    area_name: areaName,
-    country_code: (body.country_code as string) ?? 'TR',
-    formatted_address: (body.formatted_address as string) ?? null,
-    lat: (body.lat as number) ?? null,
-    lng: (body.lng as number) ?? null,
-    cuisine_primary: categorySlug ?? null,
-    status: 'active',
-    created_by: user.id,
-  };
-
-  const { data: inserted, error: insertError } = await admin
+  // 3. Restoran ve Menü Oluştur (Atomik taklidi)
+  // a. Restoranı oluştur
+  const { data: newRest, error: restErr } = await admin
     .from('restaurants')
-    .insert(insertData)
+    .insert({
+      place_id: placeId,
+      name: name,
+      city_name: cityName,
+      area_name: areaName,
+      country_code: (body.country_code as string) ?? 'TR',
+      formatted_address: (body.formatted_address as string) ?? null,
+      lat: (body.lat as number) ?? null,
+      lng: (body.lng as number) ?? null,
+      cuisine_primary: categorySlug ?? null,
+      status: 'active',
+      created_by: user.id
+    })
     .select('id')
     .single();
 
-  if (insertError) return jsonResponse({ error: insertError.message }, 500, req);
+  if (restErr) {
+    return jsonResponse({ error: restErr.message || 'Restoran eklenemedi.' }, 500, req);
+  }
 
-  const restaurantId = (inserted as { id: string }).id;
+  const restaurantId = (newRest as { id: string }).id;
 
-  // 4. Menü ekle - başarısız olursa restoranı sil
-  const { data: entry, error: menuError } = await admin
+  console.log('--- sequential insert trace ---');
+  console.log('Vars:', { restaurantId, url, userId: user.id, isAdmin });
+
+  // b. Menü ekle
+  const { data: newMenu, error: menuErr } = await admin
     .from('menu_entries')
     .insert({
       restaurant_id: restaurantId,
-      url,
+      url: url,
       submitted_by: user.id,
-      verification_status: 'pending',
+      verification_status: isAdmin ? 'approved' : 'pending'
     })
     .select('id, verification_status')
     .single();
 
-  if (menuError) {
-    await admin.from('restaurants').update({ deleted_at: new Date().toISOString() }).eq('id', restaurantId);
-    const msg = menuError.message || 'Veritabanı hatası';
+  if (menuErr) {
+    console.error('Menu Insert Error:', menuErr);
+    // Menü eklenemedi, oluşturulan restoranı sil (atomiklik taklidi)
+    const { error: delErr } = await admin.from('restaurants').delete().eq('id', restaurantId);
+    if (delErr) {
+      console.error('Rollback Delete Error:', delErr);
+    } else {
+      console.log('Rollback Delete Success!');
+    }
+    
+    const msg = menuErr.message || 'Menü eklenemedi.';
     const friendly = msg.includes('duplicate') || msg.includes('unique') ? 'Bu menü linki zaten eklenmiş.' : msg;
     return jsonResponse({ error: friendly }, 500, req);
+  }
+
+  console.log('Menu Insert Success:', newMenu);
+  const menuEntryId = (newMenu as { id: string }).id;
+  const menuStatus = (newMenu as { verification_status: string }).verification_status;
+
+  // c. Restoran Admini ekle
+  try {
+    await admin.from('restaurant_admins').insert({
+      restaurant_id: restaurantId,
+      user_id: user.id
+    });
+  } catch (e) {
+    // Kritik değil, devam et
   }
 
   // Rate limit kaydı
@@ -187,7 +213,7 @@ Deno.serve(async (req) => {
         if (res.ok) {
           const data = await res.json() as Record<string, unknown>;
           const updates: Record<string, unknown> = {};
-          const needCoords = insertData.lat == null || insertData.lng == null;
+          const needCoords = (body.lat as number | undefined) == null || (body.lng as number | undefined) == null;
           const loc = data.location as { latitude?: number; longitude?: number } | undefined;
           if (needCoords && loc?.latitude != null && loc?.longitude != null) {
             updates.lat = loc.latitude;
@@ -203,7 +229,7 @@ Deno.serve(async (req) => {
             updates.google_rating_updated_at = new Date().toISOString();
           }
           const phone = data.nationalPhoneNumber as string | undefined;
-          if (phone && !insertData.contact_phone) updates.contact_phone = phone;
+          if (phone && !(body.contact_phone as string | undefined)) updates.contact_phone = phone;
           if (Object.keys(updates).length > 0) {
             await admin.from('restaurants').update(updates).eq('id', restaurantId);
           }
@@ -213,9 +239,9 @@ Deno.serve(async (req) => {
   }
 
   return jsonResponse({
-    id: (entry as { id: string }).id,
+    id: menuEntryId,
     restaurant_id: restaurantId,
-    status: (entry as { verification_status: string }).verification_status,
+    status: menuStatus,
   });
   } catch (e) {
     const msg = String((e as Error).message || 'Beklenmeyen hata');

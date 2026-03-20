@@ -61,12 +61,12 @@ Deno.serve(async (req) => {
       items = items.filter((i: Record<string, unknown>) => i.cuisine_primary === categorySlug);
     }
 
-    // En yakın 30 işletme
+    // En yakın 50 işletme (Kullanıcı 50 adet listelemek istedi)
     items = items
       .sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
         (a.distance_meters as number ?? 0) - (b.distance_meters as number ?? 0),
       )
-      .slice(0, 30);
+      .slice(0, 50);
 
     return jsonResponse({ items }, 200, req);
   }

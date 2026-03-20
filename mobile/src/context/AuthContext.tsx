@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { type Session, type User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -9,6 +10,9 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue>({ session: null, user: null, loading: true });
+
+// Proactively refresh token every 10 minutes to prevent JWT expiry
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);

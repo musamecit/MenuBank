@@ -1,4 +1,4 @@
-import { handleCors, jsonResponse, err400, err401, err429 } from '../_shared/response.ts';
+import { handleCors, jsonResponse, err400, err401, err429, err500 } from '../_shared/response.ts';
 import { admin, getAuthFromRequest } from '../_shared/auth.ts';
 
 const VERIFIED_OWNER_ONLY_CODE = 'verified_restaurant_owner_only';
@@ -81,17 +81,29 @@ Deno.serve(async (req) => {
     }
   }
 
-  // If same URL already exists (approved), return success without inserting (no duplicate, "Menü Güncellendi" UX)
-  const { data: existingApproved } = await admin
+  // If same URL already exists (approved or pending), return success without inserting
+  const { data: existingMenu } = await admin
     .from('menu_entries')
-    .select('id')
+    .select('id, verification_status')
     .eq('restaurant_id', restaurantId)
     .eq('url', url)
-    .eq('verification_status', 'approved')
+    .in('verification_status', ['approved', 'pending'])
     .maybeSingle();
 
-  if (existingApproved) {
-    return jsonResponse({ id: (existingApproved as { id: string }).id, status: 'unchanged' });
+  if (existingMenu) {
+    if (isAdmin && (existingMenu as { verification_status: string }).verification_status === 'pending') {
+      const { data: approvedMenu } = await admin
+        .from('menu_entries')
+        .update({ verification_status: 'approved' })
+        .eq('id', (existingMenu as { id: string }).id)
+        .select('id, verification_status')
+        .single();
+      return jsonResponse({ id: (approvedMenu as { id: string }).id, status: 'approved' });
+    }
+    return jsonResponse({ 
+      id: (existingMenu as { id: string }).id, 
+      status: (existingMenu as { verification_status: string }).verification_status === 'approved' ? 'unchanged' : 'pending_exists' 
+    });
   }
 
   // Domain blacklist check
@@ -126,17 +138,18 @@ Deno.serve(async (req) => {
       restaurant_id: restaurantId,
       url,
       submitted_by: user.id,
-      verification_status: 'pending',
+      verification_status: isAdmin ? 'approved' : 'pending',
     })
     .select('id, verification_status')
     .single();
 
   if (error) {
+    console.error('Menu insert error:', error);
     const msg = error.message || 'Veritabanı hatası';
-    const friendly = msg.includes('duplicate') || msg.includes('unique')
-      ? 'Bu menü linki zaten eklenmiş.'
-      : msg;
-    return jsonResponse({ error: friendly }, 500, req);
+    if (msg.includes('duplicate') || msg.includes('unique')) {
+      return err400(req, 'Bu menü linki zaten eklenmiş.');
+    }
+    return err500(req, msg);
   }
 
   // Record rate limit event

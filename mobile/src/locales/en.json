@@ -171,7 +171,8 @@
     "apple": "Continue with Apple",
     "termsNotice": "By continuing, you agree to our {{terms}} and {{privacy}}.",
     "terms": "Terms of Service",
-    "privacy": "Privacy Policy"
+    "privacy": "Privacy Policy",
+    "sessionExpired": "Your session has expired. Please sign out and sign in again."
   },
   "claim": {
     "ctaButton": "Is this your business?",
@@ -293,7 +294,8 @@
     "ok": "OK",
     "seeAll": "See All",
     "retry": "Retry",
-    "share": "Share"
+    "share": "Share",
+    "signOut": "Sign out"
   },
   "share": {
     "cityTrend": "City's best restaurants"

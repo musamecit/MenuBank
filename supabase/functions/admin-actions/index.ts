@@ -15,11 +15,69 @@ Deno.serve(async (req) => {
   if (action === 'approve_menu') {
     const menuId = body.menu_id as string;
     if (!menuId) return err400(req, 'menu_id required');
+
+    // 1. Get restaurant info first
+    const { data: menuData } = await admin
+      .from('menu_entries')
+      .select('restaurant_id, restaurants(name)')
+      .eq('id', menuId)
+      .single();
+
+    const restaurantId = menuData?.restaurant_id;
+    const restaurantName = menuData?.restaurants?.name || 'Restoran';
+
+    // 2. Perform the update
     await admin
       .from('menu_entries')
       .update({ verification_status: 'approved', verified_at: new Date().toISOString(), moderated_by: user.id, moderated_at: new Date().toISOString() })
       .eq('id', menuId);
     await admin.from('admin_audit_log').insert({ actor_id: user.id, action: 'approve_menu', entity_type: 'menu_entry', entity_id: menuId });
+
+    // 3. Notify followers
+    if (restaurantId) {
+      try {
+        // Find followers with notifications enabled
+        const { data: followers } = await admin
+          .from('user_follows')
+          .select(`
+            user_id,
+            user_profiles!inner(notifications_menu_enabled),
+            user_push_tokens(token)
+          `)
+          .eq('restaurant_id', restaurantId)
+          .eq('user_profiles.notifications_menu_enabled', true);
+
+        if (followers && followers.length > 0) {
+          const messages = [];
+          for (const f of followers) {
+            const tokens = Array.isArray(f.user_push_tokens) ? f.user_push_tokens : f.user_push_tokens ? [f.user_push_tokens] : [];
+            for (const t of tokens) {
+              if (t?.token) {
+                messages.push({
+                  to: t.token,
+                  sound: 'default',
+                  title: 'Yeni menü eklendi',
+                  body: `${restaurantName} restoranına yeni menü eklendi.`,
+                  data: { restaurantId, screen: 'RestaurantDetail' },
+                });
+              }
+            }
+          }
+
+          if (messages.length > 0) {
+            // Batch send to Expo
+            await fetch('https://exp.host/--/api/v2/push/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(messages),
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Error sending followers notification:', e);
+      }
+    }
+
     return jsonResponse({ status: 'approved' });
   }
 

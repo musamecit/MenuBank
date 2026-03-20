@@ -57,9 +57,9 @@ export default function OwnerDashboardScreen() {
     setSaving(true);
     try {
       await updateOwnerRestaurant(restaurantId, {
-        contact_phone: phone || null,
-        reservation_url: reservationUrl || null,
-        image_url: heroImageUrl || null,
+        contact_phone: phone || undefined,
+        reservation_url: reservationUrl || undefined,
+        image_url: heroImageUrl || undefined,
       });
       Alert.alert(t('common.done'));
       setEditing(false);

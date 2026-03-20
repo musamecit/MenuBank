@@ -1,0 +1,12 @@
+# Skip gateway JWT verification; we verify manually with admin.auth.getUser()
+[functions.submit-menu]
+verify_jwt = false
+
+[functions.submit-restaurant-with-menu]
+verify_jwt = false
+
+[functions.create-restaurant]
+verify_jwt = false
+
+[functions.admin-actions]
+verify_jwt = false

@@ -86,6 +86,7 @@
     "submitting": "Gönderiliyor...",
     "success": "Menü başarıyla gönderildi!",
     "menuUnchanged": "Menü güncellendi",
+    "alreadyPending": "Bu menü zaten onay bekliyor",
     "loginRequired": "Menü eklemek için giriş yapın",
     "liveSearchHint": "Yazarken öneriler otomatik gelir",
     "typeToSearch": "Restoran adı yazarak arayın",
@@ -171,7 +172,8 @@
     "apple": "Apple ile Giriş",
     "termsNotice": "Devam ederek {{terms}} ve {{privacy}} kabul etmiş olursunuz.",
     "terms": "Kullanım Koşullarını",
-    "privacy": "Gizlilik Politikasını"
+    "privacy": "Gizlilik Politikasını",
+    "sessionExpired": "Oturumunuz sona ermiş. Lütfen çıkış yapıp tekrar giriş yapın."
   },
   "claim": {
     "ctaButton": "Bu işletme size mi ait?",
@@ -293,7 +295,8 @@
     "ok": "Tamam",
     "seeAll": "Tümünü Gör",
     "retry": "Tekrar Dene",
-    "share": "Paylaş"
+    "share": "Paylaş",
+    "signOut": "Çıkış yap"
   },
   "share": {
     "cityTrend": "Şehrin en iyi restoranları"

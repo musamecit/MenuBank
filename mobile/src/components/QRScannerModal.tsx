@@ -6,7 +6,13 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
-const isValidUrl = (str: string): boolean => /^https?:\/\//i.test(str.trim());
+const isValidUrl = (str: string): boolean => /^https?:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(str.trim());
+
+/** Normalize scanned URL: trim whitespace, ensure lowercase scheme */
+const normalizeUrl = (str: string): string => {
+  const trimmed = str.trim();
+  return trimmed.replace(/^(https?):\/\//i, (m) => m.toLowerCase());
+};
 
 interface QRScannerModalProps {
   visible: boolean;
@@ -48,7 +54,7 @@ export default function QRScannerModal({ visible, onClose, onScan }: QRScannerMo
       if (isValidUrl(trimmed)) {
         scannedRef.current = true;
         setScanned(true);
-        onScan(trimmed);
+        onScan(normalizeUrl(trimmed));
         handleClose();
       } else {
         Alert.alert(

@@ -3,9 +3,9 @@ import React, {
 } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
-  RefreshControl, Dimensions, Modal, ScrollView,
+  RefreshControl, Dimensions, Modal, ScrollView, TextInput,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
-import { fetchNearby, fetchCuratedLists, radiusFromLatitudeDelta, type NearbyRestaurant, type CuratedList } from '../lib/explore';
+import { fetchNearby, fetchCuratedLists, radiusFromLatitudeDelta, type NearbyRestaurant, type CuratedList, calculateDistanceMeters } from '../lib/explore';
 import { fetchRestaurant, fetchMenuEntries } from '../lib/restaurants';
 import { toggleFavoriteCuratedList } from '../lib/userCuratedListFavorites';
 import { getFavorites } from '../lib/favorites';
@@ -54,7 +54,7 @@ export default function ExploreScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<Nav>();
   const mapRef = useRef<MapView>(null);
-  const listRef = useRef<{ scrollToOffset: (opts: { offset: number; animated?: boolean }) => void } | null>(null);
+  const listRef = useRef<FlashListRef<NearbyRestaurant>>(null);
   const scrollToTopAfterRegionChangeRef = useRef(false);
   const queryClient = useQueryClient();
   const listPaddingBottom = BANNER_HEIGHT_TOTAL + 8;
@@ -68,10 +68,12 @@ export default function ExploreScreen() {
   const [categorySlug, setCategorySlug] = useState<string | null>(null);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<'country' | 'city' | 'district' | null>(null);
+  const [pickerSearch, setPickerSearch] = useState('');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const regionFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
-  const [nearby, setNearby] = useState<NearbyRestaurant[]>([]);
+  const [mapRestaurants, setMapRestaurants] = useState<NearbyRestaurant[]>([]);
+  const [listRestaurants, setListRestaurants] = useState<NearbyRestaurant[]>([]);
   const [lists, setLists] = useState<CuratedList[]>([]);
   const [favoritedListIds, setFavoritedListIds] = useState<Set<string>>(new Set());
   const [favorites, setFavorites] = useState<Record<string, unknown>[]>([]);
@@ -92,6 +94,16 @@ export default function ExploreScreen() {
     }
     const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     setLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+    
+    try {
+      const geo = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      if (geo && geo.length > 0) {
+        const g = geo[0];
+        if (g.isoCountryCode) {
+           setCountryCode(g.isoCountryCode); // Varsayılan ülkeyi offline JSON için hazırla
+        }
+      }
+    } catch (e) {}
   }, []);
 
   useEffect(() => {
@@ -122,6 +134,7 @@ export default function ExploreScreen() {
   const loadNearby = useCallback(async () => {
     if (!location) return;
     setLoading(true);
+    scrollToTopAfterRegionChangeRef.current = true;
     const data = await fetchNearby(location.lat, location.lng, distanceFilter, {
       priceFilter,
       countryCode: countryCode ?? undefined,
@@ -129,12 +142,12 @@ export default function ExploreScreen() {
       areaName: area?.name ?? undefined,
       categorySlug: categorySlug ?? undefined,
     });
-    setNearby(data);
+    setListRestaurants(data);
+    setMapRestaurants((prev) => prev.length === 0 ? data : prev); // Harita boşsa pinleri bas
     setLoading(false);
   }, [location, priceFilter, distanceFilter, countryCode, city, area, categorySlug]);
 
   const loadForMapRegion = useCallback(async (region: Region) => {
-    scrollToTopAfterRegionChangeRef.current = true;
     const radius = radiusFromLatitudeDelta(region.latitudeDelta);
     try {
       const data = await fetchNearby(region.latitude, region.longitude, radius, {
@@ -144,9 +157,8 @@ export default function ExploreScreen() {
         areaName: area?.name ?? undefined,
         categorySlug: categorySlug ?? undefined,
       });
-      setNearby(data);
+      setMapRestaurants(data);
     } catch {
-      scrollToTopAfterRegionChangeRef.current = false;
       // Sessizce devam et - harita flicker için setLoading kullanmıyoruz
     }
   }, [priceFilter, countryCode, city, area, categorySlug]);
@@ -156,7 +168,7 @@ export default function ExploreScreen() {
     if (!scrollToTopAfterRegionChangeRef.current || !listRef.current) return;
     scrollToTopAfterRegionChangeRef.current = false;
     listRef.current.scrollToOffset({ offset: 0, animated: false });
-  }, [nearby]);
+  }, [listRestaurants]);
 
   useEffect(() => {
     if (subTab === 'nearby' && location) loadNearby();
@@ -193,7 +205,8 @@ export default function ExploreScreen() {
         areaName: area?.name ?? undefined,
         categorySlug: categorySlug ?? undefined,
       });
-      setNearby(data);
+      setListRestaurants(data);
+      setMapRestaurants(data);
     } else if (subTab === 'lists') {
       const data = await fetchCuratedLists();
       setLists(data);
@@ -228,33 +241,40 @@ export default function ExploreScreen() {
   }, [loadForMapRegion]);
 
   const mapMarkers = useMemo(
-    () => nearby.filter((r) => r.lat != null && r.lng != null),
-    [nearby],
+    () => mapRestaurants.filter((r) => r.lat != null && r.lng != null),
+    [mapRestaurants],
   );
 
   // İlk 3 restoran detayını prefetch et - tıklanınca anında açılsın
   useEffect(() => {
-    const ids = nearby.slice(0, 3).map((r) => r.id);
+    const ids = listRestaurants.slice(0, 3).map((r) => r.id);
     ids.forEach((id) => {
       queryClient.prefetchQuery({ queryKey: ['restaurant', id], queryFn: () => fetchRestaurant(id) });
       queryClient.prefetchQuery({ queryKey: ['menuEntries', id], queryFn: () => fetchMenuEntries(id) });
     });
-  }, [nearby, queryClient]);
+  }, [listRestaurants, queryClient]);
 
-  const renderItem = ({ item }: { item: NearbyRestaurant }) => (
-    <RestaurantCard
-      id={item.id}
-      name={item.name}
-      cityName={item.city_name}
-      areaName={item.area_name}
-      imageUrl={item.image_url}
-      isVerified={item.is_verified}
-      priceLevel={item.price_level}
-      googleRating={item.google_rating}
-      distance={item.distance_meters}
-      onPress={goToRestaurant}
-    />
-  );
+  const renderItem = ({ item }: { item: NearbyRestaurant }) => {
+    let exactDistance = item.distance_meters;
+    if (location && item.lat && item.lng) {
+      exactDistance = calculateDistanceMeters(location.lat, location.lng, item.lat, item.lng);
+    }
+
+    return (
+      <RestaurantCard
+        id={item.id}
+        name={item.name}
+        cityName={item.city_name}
+        areaName={item.area_name}
+        imageUrl={item.image_url}
+        isVerified={item.is_verified}
+        priceLevel={item.price_level}
+        googleRating={item.google_rating}
+        distance={exactDistance}
+        onPress={goToRestaurant}
+      />
+    );
+  };
 
   const renderFavItem = ({ item }: { item: Record<string, unknown> }) => (
     <RestaurantCard
@@ -268,6 +288,31 @@ export default function ExploreScreen() {
       onPress={goToRestaurant}
     />
   );
+
+  const mapHeader = useMemo(() => {
+    if (!location || !initialMapRegion) return null;
+    return (
+      <View style={styles.mapContainer} collapsable={false}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={initialMapRegion}
+          onRegionChangeComplete={handleRegionChangeComplete}
+          showsUserLocation
+          scrollEnabled
+          zoomEnabled
+          zoomTapEnabled
+          pitchEnabled={false}
+          rotateEnabled={false}
+          mapType="standard"
+        >
+          {mapMarkers.map((r) => (
+            <RestaurantMarker key={r.id} r={r} onPress={goToRestaurant} />
+          ))}
+        </MapView>
+      </View>
+    );
+  }, [location, initialMapRegion, mapMarkers, styles.mapContainer, styles.map, handleRegionChangeComplete, goToRestaurant]);
 
   return (
     <View style={styles.container}>
@@ -389,9 +434,14 @@ export default function ExploreScreen() {
               <View style={styles.modalRow}>
                 {[
                   { slug: 'restaurant', label: 'Restoran' },
+                  { slug: 'cafe', label: 'Cafe' },
                   { slug: 'bar', label: 'Bar' },
                   { slug: 'meyhane', label: 'Meyhane' },
-                  { slug: 'cafe', label: 'Cafe' },
+                  { slug: 'fastfood', label: 'Fast Food' },
+                  { slug: 'pub', label: 'Pub' },
+                  { slug: 'bakery', label: 'Tatlı & Fırın' },
+                  { slug: 'coffee', label: 'Kahveci' },
+                  { slug: 'bistro', label: 'Bistro' },
                 ].map((cat) => (
                   <TouchableOpacity
                     key={cat.slug}
@@ -440,12 +490,12 @@ export default function ExploreScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Option picker modal (country / city / district) */}
+      {/* Option picker modal (country / city / district) with SEARCH */}
       <Modal visible={!!pickerOpen} animationType="slide" transparent>
         <TouchableOpacity
           style={styles.modalBackdrop}
           activeOpacity={1}
-          onPress={() => setPickerOpen(null)}
+          onPress={() => { setPickerOpen(null); setPickerSearch(''); }}
         >
           <TouchableOpacity
             activeOpacity={1}
@@ -457,62 +507,83 @@ export default function ExploreScreen() {
               {pickerOpen === 'city' && t('explore.filterCity')}
               {pickerOpen === 'district' && t('explore.filterDistrict')}
             </Text>
-            <ScrollView style={styles.pickerModalList} showsVerticalScrollIndicator={false}>
+            <TextInput
+              style={[styles.pickerSearch, { borderColor: colors.border, color: colors.text, backgroundColor: colors.background }]}
+              placeholder="Ara..."
+              placeholderTextColor={colors.textSecondary}
+              value={pickerSearch}
+              onChangeText={setPickerSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <ScrollView style={styles.pickerModalList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {pickerOpen === 'country' && (
                 <>
-                  <TouchableOpacity
-                    style={[styles.pickerOption, { borderColor: colors.border }]}
-                    onPress={() => { setCountryCode(null); setCity(null); setArea(null); setPickerOpen(null); }}
-                  >
-                    <Text style={[styles.pickerOptionText, { color: colors.text }]}>{t('explore.filterAll')}</Text>
-                  </TouchableOpacity>
-                  {countries.map((c) => (
+                  {!pickerSearch && (
                     <TouchableOpacity
-                      key={c.code}
                       style={[styles.pickerOption, { borderColor: colors.border }]}
-                      onPress={() => { setCountryCode(c.code); setCity(null); setArea(null); setPickerOpen(null); }}
+                      onPress={() => { setCountryCode(null); setCity(null); setArea(null); setPickerOpen(null); setPickerSearch(''); }}
                     >
-                      <Text style={[styles.pickerOptionText, { color: colors.text }]}>{c.name}</Text>
+                      <Text style={[styles.pickerOptionText, { color: colors.text }]}>{t('explore.filterAll')}</Text>
                     </TouchableOpacity>
-                  ))}
+                  )}
+                  {countries
+                    .filter((c) => !pickerSearch || c.name.toLowerCase().includes(pickerSearch.toLowerCase()))
+                    .map((c) => (
+                      <TouchableOpacity
+                        key={c.code}
+                        style={[styles.pickerOption, { borderColor: colors.border }, countryCode === c.code && { backgroundColor: colors.accentMuted }]}
+                        onPress={() => { setCountryCode(c.code); setCity(null); setArea(null); setPickerOpen(null); setPickerSearch(''); }}
+                      >
+                        <Text style={[styles.pickerOptionText, { color: countryCode === c.code ? colors.accent : colors.text, fontWeight: countryCode === c.code ? '700' : '400' }]}>{c.name}</Text>
+                      </TouchableOpacity>
+                    ))}
                 </>
               )}
               {pickerOpen === 'city' && (
                 <>
-                  <TouchableOpacity
-                    style={[styles.pickerOption, { borderColor: colors.border }]}
-                    onPress={() => { setCity(null); setArea(null); setPickerOpen(null); }}
-                  >
-                    <Text style={[styles.pickerOptionText, { color: colors.text }]}>{t('explore.filterAll')}</Text>
-                  </TouchableOpacity>
-                  {cities.map((c) => (
+                  {!pickerSearch && (
                     <TouchableOpacity
-                      key={c.id}
                       style={[styles.pickerOption, { borderColor: colors.border }]}
-                      onPress={() => { setCity(c); setArea(null); setPickerOpen(null); }}
+                      onPress={() => { setCity(null); setArea(null); setPickerOpen(null); setPickerSearch(''); }}
                     >
-                      <Text style={[styles.pickerOptionText, { color: colors.text }]}>{c.name}</Text>
+                      <Text style={[styles.pickerOptionText, { color: colors.text }]}>{t('explore.filterAll')}</Text>
                     </TouchableOpacity>
-                  ))}
+                  )}
+                  {cities
+                    .filter((c) => !pickerSearch || c.name.toLowerCase().includes(pickerSearch.toLowerCase()))
+                    .map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[styles.pickerOption, { borderColor: colors.border }, city?.id === c.id && { backgroundColor: colors.accentMuted }]}
+                        onPress={() => { setCity(c); setArea(null); setPickerOpen(null); setPickerSearch(''); }}
+                      >
+                        <Text style={[styles.pickerOptionText, { color: city?.id === c.id ? colors.accent : colors.text, fontWeight: city?.id === c.id ? '700' : '400' }]}>{c.name}</Text>
+                      </TouchableOpacity>
+                    ))}
                 </>
               )}
               {pickerOpen === 'district' && (
                 <>
-                  <TouchableOpacity
-                    style={[styles.pickerOption, { borderColor: colors.border }]}
-                    onPress={() => { setArea(null); setPickerOpen(null); }}
-                  >
-                    <Text style={[styles.pickerOptionText, { color: colors.text }]}>{t('explore.filterAll')}</Text>
-                  </TouchableOpacity>
-                  {areas.map((a) => (
+                  {!pickerSearch && (
                     <TouchableOpacity
-                      key={a.id}
                       style={[styles.pickerOption, { borderColor: colors.border }]}
-                      onPress={() => { setArea(a); setPickerOpen(null); }}
+                      onPress={() => { setArea(null); setPickerOpen(null); setPickerSearch(''); }}
                     >
-                      <Text style={[styles.pickerOptionText, { color: colors.text }]}>{a.name}</Text>
+                      <Text style={[styles.pickerOptionText, { color: colors.text }]}>{t('explore.filterAll')}</Text>
                     </TouchableOpacity>
-                  ))}
+                  )}
+                  {areas
+                    .filter((a) => !pickerSearch || a.name.toLowerCase().includes(pickerSearch.toLowerCase()))
+                    .map((a) => (
+                      <TouchableOpacity
+                        key={a.id}
+                        style={[styles.pickerOption, { borderColor: colors.border }, area?.id === a.id && { backgroundColor: colors.accentMuted }]}
+                        onPress={() => { setArea(a); setPickerOpen(null); setPickerSearch(''); }}
+                      >
+                        <Text style={[styles.pickerOptionText, { color: area?.id === a.id ? colors.accent : colors.text, fontWeight: area?.id === a.id ? '700' : '400' }]}>{a.name}</Text>
+                      </TouchableOpacity>
+                    ))}
                 </>
               )}
             </ScrollView>
@@ -556,33 +627,11 @@ export default function ExploreScreen() {
             <FlashList
               ref={listRef}
               style={{ flex: 1 }}
-              data={nearby}
+              data={listRestaurants}
               keyExtractor={(item) => item.id}
-              estimatedItemSize={102}
               renderItem={renderItem}
-              ListHeaderComponent={
-                location && initialMapRegion ? (
-                  <View style={styles.mapContainer} collapsable={false}>
-                    <MapView
-                      ref={mapRef}
-                      style={styles.map}
-                      initialRegion={initialMapRegion}
-                      onRegionChangeComplete={handleRegionChangeComplete}
-                      showsUserLocation
-                      scrollEnabled
-                      zoomEnabled
-                      zoomTapEnabled
-                      pitchEnabled={false}
-                      rotateEnabled={false}
-                      mapType="standard"
-                    >
-                      {mapMarkers.map((r) => (
-                        <RestaurantMarker key={r.id} r={r} onPress={goToRestaurant} />
-                      ))}
-                    </MapView>
-                  </View>
-                ) : null
-              }
+              estimatedItemSize={102}
+              ListHeaderComponent={mapHeader}
               ListEmptyComponent={
                 loading ? (
                   <View style={{ paddingVertical: 12 }}>
@@ -593,46 +642,86 @@ export default function ExploreScreen() {
                 )
               }
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-              contentContainerStyle={{ paddingBottom: listPaddingBottom, flexGrow: 1 }}
-            />
-          ) : subTab === 'lists' ? (
-            <FlashList
-              data={lists}
-              keyExtractor={(item) => item.id}
-              estimatedItemSize={72}
-              renderItem={({ item }) => {
-                const isFav = favoritedListIds.has(item.id);
-                return (
-                  <TouchableOpacity
-                    style={styles.listCard}
-                    onPress={() => navigation.navigate('UserListDetail', { listId: item.id, title: item.title_tr })}
-                  >
-                    <Text style={styles.listTitle}>{item.title_tr}</Text>
-                    {user && (
-                      <TouchableOpacity
-                        style={styles.listFavBtn}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          toggleFavoriteCuratedList(user.id, item.id).then((now) => {
-                            setFavoritedListIds((prev) => {
-                              const next = new Set(prev);
-                              if (now) next.add(item.id);
-                              else next.delete(item.id);
-                              return next;
-                            });
-                          });
-                        }}
-                      >
-                        <Heart size={20} color={isFav ? colors.error : colors.textSecondary} fill={isFav ? colors.error : 'transparent'} />
-                      </TouchableOpacity>
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
-              ListEmptyComponent={<Text style={styles.emptyText}>{t('explore.noLists')}</Text>}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
               contentContainerStyle={{ paddingBottom: listPaddingBottom }}
             />
+          ) : subTab === 'lists' ? (
+            <ScrollView
+              contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+            >
+              {/* Dynamic Category Cards - yakınımdaki kategoriler */}
+              {location && (
+                <View>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Kategoriler</Text>
+                  {[
+                    { slug: 'restaurant', label: '🍽 Restoranlar', color: '#4CAF50' },
+                    { slug: 'cafe', label: '☕ Kafeler', color: '#FF9800' },
+                    { slug: 'bar', label: '🍺 Barlar', color: '#2196F3' },
+                    { slug: 'meyhane', label: '🥃 Meyhaneler', color: '#9C27B0' },
+                    { slug: 'fastfood', label: '🍔 Fast Food', color: '#F44336' },
+                    { slug: 'bistro', label: '🥗 Bistro & Lounge', color: '#009688' },
+                    { slug: 'coffee', label: '☕ Kahveciler', color: '#795548' },
+                    { slug: 'bakery', label: '🥐 Tatlı & Fırın', color: '#E91E63' },
+                  ].map((cat) => (
+                    <TouchableOpacity
+                      key={cat.slug}
+                      style={[styles.categoryCard, { borderLeftColor: cat.color }]}
+                      onPress={() => {
+                        setCategorySlug(cat.slug);
+                        setSubTab('nearby');
+                        loadNearby();
+                      }}
+                    >
+                      <Text style={[styles.categoryCardLabel, { color: colors.text }]}>{cat.label}</Text>
+                      <Text style={[styles.categoryCardHint, { color: colors.textSecondary }]}>Yakınımda ara →</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Curated Lists from DB */}
+              {lists.length > 0 && (
+                <View>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Özel Listeler</Text>
+                  {lists.map((item) => {
+                    const isFav = favoritedListIds.has(item.id);
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.listCard}
+                        onPress={() => navigation.navigate('UserListDetail', { listId: item.id, title: item.title_tr })}
+                      >
+                        <Text style={styles.listTitle}>{item.title_tr}</Text>
+                        {user && (
+                          <TouchableOpacity
+                            style={styles.listFavBtn}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              toggleFavoriteCuratedList(user.id, item.id).then((now) => {
+                                setFavoritedListIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (now) next.add(item.id);
+                                  else next.delete(item.id);
+                                  return next;
+                                });
+                              });
+                            }}
+                          >
+                            <Heart size={20} color={isFav ? colors.error : colors.textSecondary} fill={isFav ? colors.error : 'transparent'} />
+                          </TouchableOpacity>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+
+              {loading && lists.length === 0 && (
+                <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                  <ActivityIndicator color={colors.accent} />
+                </View>
+              )}
+            </ScrollView>
           ) : subTab === 'favorites' ? (
             !user ? (
               <View style={styles.empty}>
@@ -645,8 +734,8 @@ export default function ExploreScreen() {
               <FlashList
                 data={favorites}
                 keyExtractor={(item) => String(item.id)}
-                estimatedItemSize={102}
                 renderItem={renderFavItem}
+                estimatedItemSize={102}
                 ListEmptyComponent={<Text style={styles.emptyText}>{t('explore.noFavorites')}</Text>}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
                 contentContainerStyle={{ paddingBottom: listPaddingBottom }}
@@ -794,10 +883,18 @@ function getStyles(colors: ColorSet) {
       borderTopLeftRadius: 16,
       borderTopRightRadius: 16,
       padding: 16,
-      maxHeight: 320,
+      maxHeight: 440,
     },
-    pickerModalTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
-    pickerModalList: { maxHeight: 260 },
+    pickerModalTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
+    pickerSearch: {
+      borderWidth: 1,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 14,
+      marginBottom: 8,
+    },
+    pickerModalList: { maxHeight: 280 },
     pickerOption: {
       paddingVertical: 14,
       paddingHorizontal: 16,
@@ -832,5 +929,28 @@ function getStyles(colors: ColorSet) {
       borderRadius: 20,
     },
     modalApplyText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      marginHorizontal: 16,
+      marginTop: 16,
+      marginBottom: 8,
+    },
+    categoryCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginHorizontal: 16,
+      marginBottom: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      borderLeftWidth: 4,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    categoryCardLabel: { fontSize: 15, fontWeight: '600' },
+    categoryCardHint: { fontSize: 13 },
   });
 }
