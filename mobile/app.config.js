@@ -1,3 +1,4 @@
+// Hassas değerler repoda yok: EXPO_PUBLIC_* ortam değişkenleri veya EAS Secrets (eas secret:push).
 module.exports = {
   expo: {
     name: 'MenuBank',
@@ -89,7 +90,9 @@ module.exports = {
     scheme: 'qrmenu',
     extra: {
       eas: { projectId: 'e881fb64-8569-4657-8629-e2be5caef69e' },
-      EXPO_PUBLIC_SUPABASE_URL: 'https://byjcxrgcrcxeklhfmqxr.supabase.co',
+      EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
+      EXPO_PUBLIC_GOOGLE_PLACES_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ?? '',
     },
   },
 };

@@ -11,8 +11,8 @@ check_one() {
   [[ -z "$url" ]] && return
   if printf '%s' "$url" | grep -qE '@db\.[^@:/]+\.supabase\.co:5432'; then
     echo "::error title=Supabase IPv4 / GitHub Actions::$name doğrudan db.*.supabase.co kullanıyor (IPv6). GitHub runner IPv6'ya bağlanamaz."
-    echo "::error::Supabase Dashboard → projeniz → üstte Connect → Method: Session pooler → URI'yi kopyalayın (host ...pooler.supabase.com, kullanıcı postgres.PROJECTREF şeklinde olabilir)."
-    echo "::error::Bu URI'yi GitHub Secret olarak yapıştırın (SOURCE ve TARGET için ayrı ayrı)."
+    echo "::error::Adımlar: repodaki scripts/GITHUB_SUPABASE_POOLER_SETUP.txt dosyasını açın."
+    echo "::error::Supabase → Connect → Session pooler URI (host ...pooler.supabase.com:5432). GitHub Secret SOURCE/TARGET'a yapıştırın."
     exit 1
   fi
 }

@@ -15,6 +15,10 @@ out/
 .env.local
 .env.production
 
+# Veritabanı dökümleri (içinde URL/anahtar kalıntısı olabilir; asla commit etmeyin)
+backups/
+*.dump
+
 # IDE
 .vscode/
 .idea/

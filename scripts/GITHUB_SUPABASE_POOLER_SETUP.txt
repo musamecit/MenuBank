@@ -1,0 +1,29 @@
+GitHub Actions yedek workflow’u (db-replica-nightly.yml) — ZORUNLU ADIMLAR
+================================================================================
+
+1) Neden hata alıyorum?
+   GitHub runner’lar IPv6 kullanmaz. Supabase "Direct" bağlantısı (db.PROJE.supabase.co)
+   IPv6’dır. Bu yüzden secret’ta ASLA direct URI kullanmayın.
+
+2) Ne yapmalıyım?
+   Her iki Supabase projesi için (prod + yedek):
+   - Dashboard’da projeyi açın
+   - Üstte "Connect" (Bağlan)
+   - "Session pooler" veya "Session mode" seçin (host: ...pooler.supabase.com, port 5432)
+   - URI’yi kopyalayın (kullanıcı adı genelde postgres.PROJECTREF formatında olur)
+
+3) GitHub Secrets
+   SOURCE_DATABASE_URL  → prod Session pooler URI
+   TARGET_DATABASE_URL  → yedek Session pooler URI
+
+4) Mobil uygulama (EAS / yerel)
+   Repoda artık Supabase anon key yok. EAS’te:
+     eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_URL --value "https://....supabase.co"
+     eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "eyJ..."
+   Yerel: mobile/.env (gitignore’da) ile aynı EXPO_PUBLIC_* değişkenleri.
+
+5) Sızıntı sonrası
+   Google Cloud Console’da Places API anahtarını rotate edin.
+   Supabase’te gerekirse anon key rotate (Settings → API).
+
+Kaynak: https://supabase.com/docs/guides/database/connecting-to-postgres
