@@ -3,9 +3,9 @@
 #
 # Örnek (shell’de export edin veya launchd plist içinde EnvironmentVariables):
 #   export PROD_SUPABASE_URL="https://xxxx.supabase.co"
-#   export PROD_SUPABASE_ANON_KEY="eyJ..."   # anon (REST okuma)
+#   export PROD_SUPABASE_ANON_KEY="<Dashboard → API → anon public>"
 #   export BACKUP_SUPABASE_URL="https://yyyy.supabase.co"
-#   export BACKUP_SERVICE_ROLE_KEY="eyJ..." # yedek proje service_role — asla commit etmeyin
+#   export BACKUP_SERVICE_ROLE_KEY="<Dashboard → API → service_role yedek proje; asla commit yok>"
 #   export PROD_PGHOST="db.xxxx.supabase.co"   # veya Session pooler host
 #   export PROD_PGPASSWORD="..."
 #

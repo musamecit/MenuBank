@@ -1,0 +1,37 @@
+MenuBank — Sızıntı sonrası güvenlik (sırayla)
+==============================================
+
+A) Repoda düzeltildi (geçmişteki commit’ler hâlâ risk — C ve D’ye bakın)
+   - Sabit JWT / API key kaldırıldı; yedek SQL dump takipten çıkarıldı.
+   - daily_backup.sh yorumlarında tarayıcıyı tetikleyebilecek JWT örnek metni kaldırıldı.
+
+B) GitHub "Secret scanning" uyarılarını kapatmak
+   - Eski sırları ROTATE ettikten sonra: Repo → Security → Secret scanning alerts →
+     ilgili uyarı → "Close as" → genelde "Revoked" / "Used in tests" + açıklama.
+
+C) SADECE SENİN YAPABİLECEĞİN (dashboard / kimlik doğrulama)
+   1) YEDEK Supabase projesi (sızıntıdaki service_role buraya aitti)
+      - https://supabase.com/dashboard → yedek proje
+      - Settings → API → service_role "Reveal" yanında yenile/regenerate varsa kullan
+        (veya proje ayarlarından yeni JWT üretildiğini doğrula)
+      - Eski service_role artık çalışmamalı. Yerel/cron: BACKUP_SERVICE_ROLE_KEY’i
+        yeni değerle export et; GitHub Actions’ta bu key KULLANILMIYOR olmalı.
+
+   2) PROD Supabase (anon key eski commit’lerde göründüyse iyi fikir)
+      - Settings → API → anon "Regenerate" → EAS + .env güncelle → yeni store build.
+
+   3) Google Cloud — Places API key (env.ts geçmişi + SQL dump)
+      - https://console.cloud.google.com/apis/credentials
+      - Eski key → Delete veya kısıtla; yeni key oluştur, kısıtları bağla.
+      - EAS: EXPO_PUBLIC_GOOGLE_PLACES_API_KEY güncelle
+      - Supabase Edge Function secret: GOOGLE_PLACES_API_KEY varsa güncelle + redeploy
+
+D) Geçmişten sadece backups/*.sql ve *.dump kaldırma (güvenli, küçük adım)
+   - Mirror yedek: git clone --mirror https://github.com/musamecit/MenuBank.git yedek.git
+   - scripts/purge-secrets-from-history.sh
+   - git push --force origin main
+   - daily_backup.sh / env.ts içindeki ESKİ JWT satırları için: GitHub secret sayfasındaki
+     "Revoked" + anahtar rotate yeterli olabilir; tam satır silmek için filter-repo --replace-text
+     (scripts/ANTIGRAVITY_SECURITY_PROMPT.txt).
+
+E) Antigravity / başka asistan için: scripts/ANTIGRAVITY_SECURITY_PROMPT.txt dosyasına bakın.

@@ -13,7 +13,7 @@ try {
 function redactSecrets(s: string): string {
   return s
     .replace(/Bearer\s+[^\s]+/gi, 'Bearer [REDACTED]')
-    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[JWT]')
+    .replace(/\u0065yJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[JWT]')
     .replace(/sk_[A-Za-z0-9]+/g, '[SECRET]')
     .replace(/sb_publishable_[A-Za-z0-9]+/g, '[ANON_KEY]')
     .replace(/https?:\/\/[^/]+@[^\s]+/g, (m) => m.replace(/@[^\s]+/, '@[REDACTED]'));

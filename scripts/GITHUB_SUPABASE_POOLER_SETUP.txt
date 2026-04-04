@@ -19,7 +19,7 @@ GitHub Actions yedek workflow’u (db-replica-nightly.yml) — ZORUNLU ADIMLAR
 4) Mobil uygulama (EAS / yerel)
    Repoda artık Supabase anon key yok. EAS’te:
      eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_URL --value "https://....supabase.co"
-     eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "eyJ..."
+     eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "<anon key Dashboard’dan>"
    Yerel: mobile/.env (gitignore’da) ile aynı EXPO_PUBLIC_* değişkenleri.
 
 5) Sızıntı sonrası

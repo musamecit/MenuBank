@@ -1,0 +1,32 @@
+Antigravity (veya benzeri asistan) için kopyala-yapıştır prompt
+===============================================================
+
+Bağlam:
+- Repo: GitHub public/private "musamecit/MenuBank" (veya kullanıcının verdiği URL).
+- GitGuardian / GitHub Secret scanning: (1) Supabase service_role JWT scripts/daily_backup.sh geçmişinde, (2) Google API key mobile/src/config/env.ts geçmişinde, (3) olası SQL dump.
+- Güncel working tree’de bu sırlar kaldırıldı; sorun çoğunlukla GIT GEÇMİŞİ ve hâlâ geçerli OLABİLECEK anahtarlar.
+
+Görevlerin (sırayla, kullanıcı onayı olmadan tehlikeli komut çalıştırma):
+
+1) Yerel repoda `git log --all --full-history -p -- scripts/daily_backup.sh mobile/src/config/env.ts | head -200` ile sızıntı commit’lerini doğrula.
+
+2) `git filter-repo` veya GitHub dokümantasyonundaki `git filter-repo --replace-text` ile geçmişten:
+   - Eski daily_backup.sh içeriğini,
+   - Eski env.ts içeriğini,
+   - backups/*.sql tracked ise onları
+   tamamen kaldır veya güvenli placeholder ile değiştir. `git filter-repo --invert-paths` ile bu path’leri geçmişten silmek de kabul edilir.
+
+3) Remote güncellemesi için kullanıcıya net komut ver:
+   `git push --force origin main`
+   ve uyarı: başka clone varsa rebase/reset gerekir.
+
+4) Kullanıcıya yapılacaklar listesi (sen yapamazsın):
+   - Supabase YEDEK projede service_role JWT’yi Dashboard’dan rotate et.
+   - Google Cloud’da sızıntıya düşen API key’i sil; yenisini EAS + Edge secrets’a koy.
+   - GitHub → Security → secret scanning alert’leri “revoked” ile kapat.
+
+5) Çıktı: tek bir bash script veya adım adım komut bloğu üret; patları açıkla.
+
+Kısıtlar:
+- Kullanıcının Supabase/Google şifrelerine erişimin yok; sadece git ve talimat üret.
+- Asla gerçek JWT/API key metnini çıktıya yazma; sadece yer tutucu kullan.
