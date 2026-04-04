@@ -42,8 +42,8 @@ jobs:
             exit 1
           fi
 
-      - name: PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+      - name: PostgreSQL client + dig (IPv4 DNS)
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16 dnsutils
 
       # Hangi uçta hata olduğunu logda net görmek için (şifreler maskelenir)
       - name: Kaynak DB bağlantı testi

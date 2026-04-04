@@ -16,14 +16,32 @@ normalize_pg_url() {
   printf '%s' "$u"
 }
 
-# GitHub Actions → Supabase: bazen IPv6 yolu sorun çıkarır; IPv4 hostaddr ekle
+# A kaydı (IPv4); GitHub runner'da getent çoğu zaman önce IPv6 verir, hostaddr hiç eklenmez.
+resolved_ipv4_for_host() {
+  local host=$1
+  local ipv4=""
+  if command -v dig >/dev/null 2>&1; then
+    local ns
+    for ns in 8.8.8.8 1.1.1.1; do
+      ipv4=$(dig +short A "$host" @"$ns" 2>/dev/null | grep -E '^[0-9.]+$' | head -1)
+      [[ -n "$ipv4" ]] && break
+    done
+    [[ -z "$ipv4" ]] && ipv4=$(dig +short A "$host" 2>/dev/null | grep -E '^[0-9.]+$' | head -1)
+  fi
+  if [[ -z "$ipv4" ]]; then
+    ipv4=$(getent ahosts "$host" 2>/dev/null | awk '/STREAM/ {print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+  fi
+  printf '%s' "$ipv4"
+}
+
+# GitHub Actions → Supabase: runner'da IPv6 genelde "Network is unreachable"; IPv4 hostaddr zorunlu.
 maybe_prefer_ipv4_pg_url() {
   local u=$1
   [[ "${REPLICA_PREFER_IPV4:-0}" != "1" ]] && { printf '%s' "$u"; return; }
   local host ipv4
   host=$(printf '%s' "$u" | sed -E -n 's|postgresql://[^@]+@([^:/]+).*|\1|p')
   [[ -z "$host" ]] && { printf '%s' "$u"; return; }
-  ipv4=$(getent ahosts "$host" 2>/dev/null | awk '/STREAM/ {print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+  ipv4=$(resolved_ipv4_for_host "$host")
   [[ -z "$ipv4" ]] && { printf '%s' "$u"; return; }
   if [[ "$u" == *hostaddr=* ]]; then
     printf '%s' "$u"
