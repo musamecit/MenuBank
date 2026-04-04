@@ -53,7 +53,10 @@ if [[ "${REPLICA_SCHEMA_CLEAN:-1}" == "1" ]]; then
 fi
 
 echo "→ Şema dökümü (public, kaynak=salt okunur)..."
-dump_from_source "${SCHEMA_DUMP_ARGS[@]}" --file="$TMPDIR/schema.sql"
+dump_from_source "${SCHEMA_DUMP_ARGS[@]}" --file="$TMPDIR/schema_raw.sql"
+
+# Filtre: Supabase 'public' semasi dahil bazi temel nesneleri kilitler/korur. Dosyadan bunlari cikartiyoruz.
+grep -E -v '^(DROP SCHEMA|CREATE SCHEMA|COMMENT ON SCHEMA) (public|auth|graphql|realtime|storage)' "$TMPDIR/schema_raw.sql" > "$TMPDIR/schema.sql"
 
 echo "→ Hedefe şema uygulanıyor (yalnız yedek DB)..."
 psql "$TARGET_URL" -v ON_ERROR_STOP=1 -f "$TMPDIR/schema.sql"
