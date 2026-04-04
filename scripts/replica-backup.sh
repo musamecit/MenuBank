@@ -16,8 +16,12 @@
 
 set -euo pipefail
 
-SOURCE_URL="${SOURCE_DATABASE_URL:-}"
-TARGET_URL="${TARGET_DATABASE_URL:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=pg-url-normalize.sh
+source "$SCRIPT_DIR/pg-url-normalize.sh"
+
+SOURCE_URL=$(finalize_pg_url "${SOURCE_DATABASE_URL:-}")
+TARGET_URL=$(finalize_pg_url "${TARGET_DATABASE_URL:-}")
 
 if [[ -z "$SOURCE_URL" || -z "$TARGET_URL" ]]; then
   echo "Hata: SOURCE_DATABASE_URL ve TARGET_DATABASE_URL tanımlı olmalı." >&2
@@ -30,6 +34,7 @@ if [[ "$SOURCE_URL" == "$TARGET_URL" ]]; then
 fi
 
 export PGSSLMODE="${PGSSLMODE:-require}"
+export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-30}"
 
 command -v pg_dump >/dev/null || { echo "pg_dump bulunamadı (postgresql-client kurun)." >&2; exit 1; }
 command -v psql >/dev/null || { echo "psql bulunamadı." >&2; exit 1; }
