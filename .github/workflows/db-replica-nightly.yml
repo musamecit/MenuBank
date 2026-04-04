@@ -1,0 +1,53 @@
+# Her gece otomatik: production Postgres → yedek Supabase projesi (public şema).
+# Zaman: ~Türkiye 00:01 (GitHub cron UTC; aşağıdaki satır TR 00:01 civarı).
+#
+# Kurulum (bir kez):
+#   1) Repo GitHub'a push edilsin (varsayılan dal = schedule'ın çalıştığı dal).
+#   2) Settings → Secrets and variables → Actions → New repository secret
+#      - SOURCE_DATABASE_URL  (prod: postgresql://postgres:ŞİFRE@db.xxx.supabase.co:5432/postgres)
+#      - TARGET_DATABASE_URL  (yedek: aynı format)
+#   3) Settings → Actions → General → Actions permissions: "Allow all actions" veya org izni.
+#
+# Ana veritabanı: script yalnızca pg_dump ile okur; yazma yalnızca TARGET üzerinde.
+
+name: Nightly database replica backup
+
+on:
+  schedule:
+    # UTC 21:01 ≈ Türkiye 00:01 (ertesi gün, UTC+3)
+    - cron: "1 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-replica-backup
+  cancel-in-progress: true
+
+jobs:
+  replica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Secrets kontrolü
+        env:
+          SRC: ${{ secrets.SOURCE_DATABASE_URL }}
+          DST: ${{ secrets.TARGET_DATABASE_URL }}
+        run: |
+          if [ -z "$SRC" ] || [ -z "$DST" ]; then
+            echo "::error::Eksik secret: SOURCE_DATABASE_URL ve TARGET_DATABASE_URL tanımlayın (Repo Settings → Secrets)."
+            exit 1
+          fi
+
+      - name: PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Yedekle (prod salt okunur)
+        env:
+          PGSSLMODE: require
+          SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
+          TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
+        run: bash scripts/replica-backup.sh
