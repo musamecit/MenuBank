@@ -17,9 +17,20 @@ export async function submitReport(
     headers,
     body: JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
-  if (!res.ok) {
-    throw new Error(data.error ?? 'Report failed');
+  const text = await res.text();
+  let data = {} as { status?: string; error?: string; message?: string };
+  if (text) {
+    try {
+      data = JSON.parse(text) as typeof data;
+    } catch {
+      throw new Error(text.length > 160 ? `${text.slice(0, 160)}…` : text);
+    }
   }
-  return { status: (data.status as 'received' | 'already_reported') ?? 'received' };
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `Bildirim gönderilemedi (${res.status})`);
+  }
+  if (data.status === 'already_reported') {
+    return { status: 'already_reported' };
+  }
+  return { status: (data.status as 'received') ?? 'received' };
 }

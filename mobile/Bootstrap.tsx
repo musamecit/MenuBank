@@ -1,35 +1,29 @@
 /**
- * Bootstrap: Splash'ı hemen kapatır, sonra tam App'i yükler.
- * Bu sayede splash donması önlenir - önce minimal render, hemen hide, sonra App.
+ * App statik import (release'te dynamic import takılmasın).
+ * Splash: önce sync hide, sonra hideAsync — native katman farklı build'lerde farklı davranabiliyor.
  */
-import React, { useLayoutEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import React, { useLayoutEffect, useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
+import App from './App';
+
+function hideSplash() {
+  try {
+    SplashScreen.hide();
+  } catch {
+    /* ignore */
+  }
+  void SplashScreen.hideAsync().catch(() => {});
+}
 
 export default function Bootstrap() {
-  const [App, setApp] = useState<React.ComponentType | null>(null);
-
-  // useLayoutEffect: İlk commit'ten hemen sonra çalışır - splash'ı anında kapat
   useLayoutEffect(() => {
-    SplashScreen.hide();
+    hideSplash();
   }, []);
 
-  // App'i lazy yükle - ilk render'da sadece minimal UI, splash hemen kapanır
-  React.useEffect(() => {
-    let cancelled = false;
-    import('./App').then((mod) => {
-      if (!cancelled) setApp(() => mod.default);
-    });
-    return () => { cancelled = true; };
+  useEffect(() => {
+    const id = requestAnimationFrame(() => hideSplash());
+    return () => cancelAnimationFrame(id);
   }, []);
-
-  if (!App) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020617' }}>
-        <ActivityIndicator size="large" color="#fff" />
-      </View>
-    );
-  }
 
   return <App />;
 }

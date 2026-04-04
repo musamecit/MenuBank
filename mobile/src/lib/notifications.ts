@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { supabase } from './supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/env';
@@ -8,16 +9,36 @@ try {
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
-      shouldSetBadge: false,
+      shouldSetBadge: true,
       shouldShowBanner: true,
       shouldShowList: true,
     }),
   });
 } catch {
-  // Bazı ortamlarda başlangıçta hata verebilir
+  /* bazı ortamlarda başlangıçta hata */
+}
+
+let channelsReady = false;
+
+/** Android 8+: kanal olmadan sistem tepsisinde görünmeyebilir */
+export async function setupNotificationChannels(): Promise<void> {
+  if (channelsReady) return;
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Genel',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      sound: 'default',
+      enableVibrate: true,
+      showBadge: true,
+    });
+  }
+  channelsReady = true;
 }
 
 export async function registerPushToken(userId: string) {
+  await setupNotificationChannels();
+
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
   if (existing !== 'granted') {
@@ -26,8 +47,20 @@ export async function registerPushToken(userId: string) {
   }
   if (finalStatus !== 'granted') return;
 
-  const tokenData = await Notifications.getExpoPushTokenAsync();
-  const token = tokenData.data;
+  const projectId =
+    (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId ??
+    (Constants as { easConfig?: { projectId?: string } }).easConfig?.projectId;
+
+  let token: string;
+  try {
+    const tokenData = projectId
+      ? await Notifications.getExpoPushTokenAsync({ projectId })
+      : await Notifications.getExpoPushTokenAsync();
+    token = tokenData.data;
+  } catch {
+    return;
+  }
+
   const platform = Platform.OS === 'ios' ? 'ios' : 'android';
 
   try {
@@ -45,9 +78,6 @@ export async function registerPushToken(userId: string) {
       body: JSON.stringify({ token, platform }),
     });
   } catch {
-    // fallback to direct insert
-    await supabase
-      .from('user_push_tokens')
-      .upsert({ user_id: userId, token, platform }, { onConflict: 'user_id' });
+    /* RLS genelde doğrudan insert’i engeller; asıl kayıt push-tokenable edge function ile */
   }
 }

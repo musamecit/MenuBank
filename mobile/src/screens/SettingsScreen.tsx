@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Sun, Moon, Monitor, Globe, MapPin, Bell } from 'lucide-react-native';
+import { Sun, Moon, Monitor, Globe, ChevronRight } from 'lucide-react-native';
 import { useTheme, type ThemeMode } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -13,10 +13,18 @@ import {
 } from '../lib/settingsStorage';
 import type { ColorSet } from '../theme/colors';
 
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation/RootNavigator';
+import LanguagePickerModal from '../components/LanguagePickerModal';
+import { registerPushToken } from '../lib/notifications';
+import { LANGUAGE_NATIVE_NAMES, normalizeAppLanguage } from '../lib/languages';
+
 const PRIVACY_URL = 'https://musamecit.github.io/MenuBank/privacy.html';
 const TERMS_URL = 'https://musamecit.github.io/MenuBank/terms.html';
 
 export default function SettingsScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { t, i18n } = useTranslation();
   const { colors, mode, setMode } = useTheme();
   const { user } = useAuth();
@@ -26,7 +34,7 @@ export default function SettingsScreen() {
   const [locationEnabled, setLocationEnabledState] = useState(true);
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true);
   const [isMenuBlocked, setIsMenuBlocked] = useState(false);
-
+  const [languageModalOpen, setLanguageModalOpen] = useState(false);
   useEffect(() => {
     if (!user) return;
     supabase
@@ -117,19 +125,24 @@ export default function SettingsScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
-        <View style={styles.optionRow}>
-          {[{ key: 'tr', label: 'Türkçe' }, { key: 'en', label: 'English' }].map(({ key, label }) => (
-            <TouchableOpacity
-              key={key}
-              style={[styles.optionBtn, i18n.language === key && styles.optionBtnActive]}
-              onPress={() => i18n.changeLanguage(key)}
-            >
-              <Globe size={18} color={i18n.language === key ? '#fff' : colors.text} />
-              <Text style={[styles.optionText, i18n.language === key && styles.optionTextActive]}>{label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <TouchableOpacity
+          style={styles.languageRow}
+          onPress={() => setLanguageModalOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={t('settings.chooseLanguage')}
+        >
+          <Globe size={20} color={colors.textSecondary} />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.languageRowHint}>{t('settings.chooseLanguage')}</Text>
+            <Text style={[styles.languageRowValue, { color: colors.text }]}>
+              {LANGUAGE_NATIVE_NAMES[normalizeAppLanguage(i18n.resolvedLanguage ?? i18n.language)]}
+            </Text>
+          </View>
+          <ChevronRight size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
       </View>
+
+      <LanguagePickerModal visible={languageModalOpen} onClose={() => setLanguageModalOpen(false)} />
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t('settings.locationServices')}</Text>
@@ -166,12 +179,27 @@ export default function SettingsScreen() {
                   .from('user_profiles')
                   .update({ notifications_menu_enabled: v, updated_at: new Date().toISOString() })
                   .eq('id', user.id);
+                if (v) {
+                  await registerPushToken(user.id);
+                }
               }
             }}
             trackColor={{ false: colors.border, true: colors.accent }}
           />
         </View>
       </View>
+
+      {user && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.account')}</Text>
+          <TouchableOpacity 
+            style={styles.linkRow} 
+            onPress={() => navigation.navigate('BlockedUsers')}
+          >
+            <Text style={[styles.linkText, { color: colors.text }]}>{t('settings.blockedUsers', 'Engellenen Kullanıcılar')}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {user && (
         <View style={styles.section}>
@@ -226,5 +254,17 @@ function getStyles(colors: ColorSet) {
       backgroundColor: `${colors.error}15`,
     },
     blockWarningText: { fontSize: 13, color: colors.error },
+    languageRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    languageRowHint: { fontSize: 12, color: colors.textSecondary, marginBottom: 2 },
+    languageRowValue: { fontSize: 16, fontWeight: '600' },
   });
 }

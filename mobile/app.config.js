@@ -1,4 +1,4 @@
-export default {
+module.exports = {
   expo: {
     name: 'MenuBank',
     slug: 'QRMenu',
@@ -26,9 +26,7 @@ export default {
         NSLocationWhenInUseUsageDescription: 'Show nearby restaurants on the map',
         NSLocationAlwaysUsageDescription: 'Allow QRMenu to access your location',
         NSLocationAlwaysAndWhenInUseUsageDescription: 'Allow QRMenu to access your location',
-        NSCameraUsageDescription: 'Menü linkini almak için QR kodu taramanız gerekiyor.',
-        NSUserTrackingUsageDescription:
-          'We use this to aggregation-only analytics: anonymous counts for search and trends. No individual tracking.',
+        NSCameraUsageDescription: 'Scan QR codes to quickly add menu links.',
         GADApplicationIdentifier: 'ca-app-pub-6812424036943781~5306658061',
         SKAdNetworkItems: [
           { SKAdNetworkIdentifier: 'cstr6suwn9.skadnetwork' },
@@ -59,17 +57,39 @@ export default {
     },
     platforms: ['ios', 'android'],
     plugins: [
+      'expo-splash-screen',
+      'expo-localization',
+      './plugins/withIosBuildScriptRobustness.cjs',
+      './plugins/withIosPodfilePostInstallFixes.cjs',
+      [
+        'expo-build-properties',
+        {
+          // RN 0.83 ön-derlenmiş ReactNativeDependencies kullanırken RCT-Folly ayrı pod değildir;
+          // react-native-iap (RNIap) New Arch için RCT-Folly spec'ine bağımlı → pod install çözümü için
+          // iOS'ta üçüncü parti RN bağımlılıklarını kaynaktan derle (RCT-Folly grafiğe girer). Android değişmez.
+          ios: {
+            buildReactNativeFromSource: true,
+          },
+        },
+      ],
       'expo-image',
-      ['expo-camera', { cameraPermission: 'Menü linkini almak için QR kodu taramanız gerekiyor.', barcodeScannerEnabled: true }],
+      ['expo-camera', { cameraPermission: 'Scan QR codes to quickly add menu links.', barcodeScannerEnabled: true }],
       'expo-web-browser',
       ['expo-location', { locationWhenInUsePermission: 'Show nearby restaurants on the map' }],
       'expo-notifications',
+      'react-native-iap',
+      [
+        'react-native-google-mobile-ads',
+        {
+          androidAppId: 'ca-app-pub-6812424036943781~5306658061',
+          iosAppId: 'ca-app-pub-6812424036943781~5306658061',
+        },
+      ],
     ],
     scheme: 'qrmenu',
     extra: {
       eas: { projectId: 'e881fb64-8569-4657-8629-e2be5caef69e' },
       EXPO_PUBLIC_SUPABASE_URL: 'https://byjcxrgcrcxeklhfmqxr.supabase.co',
-      EXPO_PUBLIC_GOOGLE_PLACES_API_KEY: '[REDACTED_GOOGLE_PLACES_API_KEY]',
     },
   },
 };

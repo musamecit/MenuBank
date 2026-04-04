@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase';
 interface Claim {
   id: string;
   restaurant_id: string;
-  claimed_by: string;
   status: string;
   submitted_at: string;
   restaurants: { name: string } | null;
@@ -19,7 +18,7 @@ export default function ClaimsPage() {
   const load = useCallback(async () => {
     const { data } = await supabase
       .from('restaurant_claims')
-      .select('id, restaurant_id, claimed_by, status, submitted_at, restaurants(name)')
+      .select('id, restaurant_id, status, submitted_at, restaurants(name)')
       .eq('status', 'pending')
       .order('submitted_at', { ascending: false })
       .limit(50);
@@ -49,7 +48,7 @@ export default function ClaimsPage() {
           <thead>
             <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
               <th style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>Restaurant</th>
-              <th style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>Claimed By</th>
+              <th style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>Claim ID</th>
               <th style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>Date</th>
               <th style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>Actions</th>
             </tr>
@@ -58,7 +57,7 @@ export default function ClaimsPage() {
             {claims.map((c) => (
               <tr key={c.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                 <td style={{ padding: '12px 16px', fontSize: 14 }}>{c.restaurants?.name ?? '-'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>{c.claimed_by.slice(0, 8)}...</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280', fontFamily: 'monospace' }}>{c.id.slice(0, 8)}…</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>
                   {c.submitted_at ? new Date(c.submitted_at).toLocaleDateString() : '-'}
                 </td>

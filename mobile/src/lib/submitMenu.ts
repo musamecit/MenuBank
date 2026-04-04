@@ -6,27 +6,18 @@ const SESSION_EXPIRED_MSG = 'Oturumunuz sona ermiş. Lütfen çıkış yapıp te
 
 function toFriendlyError(raw: string): string {
   const lower = raw.toLowerCase();
-  let baseMsg = raw || 'Bir hata oluştu. Lütfen tekrar deneyin.';
   
-  if (lower.includes('invalid jwt') || (lower.includes('jwt') && lower.includes('invalid'))) baseMsg = SESSION_EXPIRED_MSG;
-  else if (lower.includes('giriş yapmanız gerekiyor') || lower.includes('oturumunuz sona ermiş')) baseMsg = SESSION_EXPIRED_MSG;
-  else if (lower.includes('verified_restaurant_owner_only')) baseMsg = 'Onaylanmış restoranlara sadece sahibi menü ekleyebilir.';
-  else if (lower.includes('duplicate') || lower.includes('unique')) baseMsg = 'Bu menü linki zaten eklenmiş.';
-  else if (lower.includes('günlük gönderim limitinize ulaştınız')) baseMsg = 'Günlük gönderim limitinize ulaştınız. Lütfen yarın tekrar deneyin.';
-  else if (lower.includes('geçersiz url')) baseMsg = 'Geçersiz URL. Lütfen linkin "https://" ile başladığından emin olun.';
-  else if (lower.includes('edge function returned a non-2xx') || lower.includes('functions_http_error')) {
-    baseMsg = 'İşlem sırasında bir hata oluştu. Lütfen tekrar deneyin.';
-  }
-
-  // Preserve the DEBUG block I added earlier so we can finally see exactly what the server is returning
-  if (raw.includes('DEBUG:')) {
-    const debugPart = raw.substring(raw.indexOf('DEBUG:'));
-    if (!baseMsg.includes(debugPart)) {
-      baseMsg = `${baseMsg}\n\n${debugPart}`;
-    }
+  if (lower.includes('invalid jwt') || (lower.includes('jwt') && lower.includes('invalid'))) return SESSION_EXPIRED_MSG;
+  if (lower.includes('giriş yapmanız gerekiyor') || lower.includes('oturumunuz sona ermiş')) return SESSION_EXPIRED_MSG;
+  if (lower.includes('verified_restaurant_owner_only')) return 'Onaylanmış restoranlara sadece sahibi menü ekleyebilir.';
+  if (lower.includes('duplicate') || lower.includes('unique')) return 'Bu menü linki zaten eklenmiş.';
+  if (lower.includes('günlük gönderim limitinize ulaştınız')) return 'Günlük gönderim limitinize ulaştınız. Lütfen yarın tekrar deneyin.';
+  if (lower.includes('geçersiz url')) return 'Geçersiz URL. Lütfen linkin "https://" ile başladığından emin olun.';
+  if (lower.includes('edge function returned a non-2xx') || lower.includes('functions_http_error')) {
+    return 'İşlem sırasında bir hata oluştu. Lütfen tekrar deneyin.';
   }
   
-  return baseMsg;
+  return raw || 'Bir hata oluştu. Lütfen tekrar deneyin.';
 }
 
 /** 
@@ -98,14 +89,13 @@ async function invokeEdgeFunction(functionName: string, body: any) {
   }
 
   if (!response.ok) {
-    const debugInfo = `[HTTP ${response.status}] [Resp: ${rawText.substring(0, 50)}]`;
-    if (response.status === 401) errorMsg = `${SESSION_EXPIRED_MSG} \n\nDEBUG: ${debugInfo}`;
+    if (response.status === 401) errorMsg = SESSION_EXPIRED_MSG;
     else if (response.status === 403) errorMsg = 'verified_restaurant_owner_only';
     else if (response.status === 429) errorMsg = 'Günlük gönderim limitinize ulaştınız. Lütfen yarın tekrar deneyin.';
     else if (response.status === 400 && !errorMsg) errorMsg = 'Geçersiz bilgiler gönderildi. Lütfen girdiğiniz linki kontrol edin.';
     // Fallback if still empty
     if (!errorMsg || errorMsg === 'İşlem sırasında bir hata oluştu.') {
-      errorMsg = `Bir hata oluştu. \n\nDEBUG: ${debugInfo}`;
+      errorMsg = 'Bir hata oluştu. Lütfen tekrar deneyin.';
     }
     
     throw new Error(errorMsg);

@@ -1,5 +1,9 @@
 import { handleCors, jsonResponse, err400, err401, err429, err500 } from '../_shared/response.ts';
 import { admin, getAuthFromRequest } from '../_shared/auth.ts';
+import { validateMenuUrl } from '../_shared/validateMenuUrl.ts';
+import { notifyAdmins } from '../_shared/notifyAdmins.ts';
+import { notifyMenuFollowersMenuUpdated } from '../_shared/notifyMenuFollowers.ts';
+import { resolveRestaurantClaimClaimantColumn } from '../_shared/claimantColumn.ts';
 
 const VERIFIED_OWNER_ONLY_CODE = 'verified_restaurant_owner_only';
 
@@ -25,6 +29,12 @@ Deno.serve(async (req) => {
     return err400(req, 'Geçersiz URL. http veya https ile başlamalı.');
   }
 
+  // Advanced Menu URL Validation (Scoring & Safety checks)
+  const validation = await validateMenuUrl(url);
+  if (validation.action === 'reject') {
+    return err400(req, validation.reason);
+  }
+
   // Rate limit (skip for admins)
   if (!isAdmin) {
     try {
@@ -38,13 +48,15 @@ Deno.serve(async (req) => {
   // Check restaurant exists (allow both active and disabled - disabled restaurants can receive menu submissions for review)
   const { data: restaurant } = await admin
     .from('restaurants')
-    .select('id, is_verified')
+    .select('id, is_verified, name')
     .eq('id', restaurantId)
     .in('status', ['active', 'disabled'])
     .is('deleted_at', null)
     .maybeSingle();
 
   if (!restaurant) return err400(req, 'Restoran bulunamadı');
+
+  const restaurantName = (restaurant as { name?: string }).name ?? 'Restoran';
 
   // Verified restaurants: only owner or admin can add/update menu
   const isVerified = (restaurant as { is_verified?: boolean }).is_verified === true;
@@ -56,12 +68,13 @@ Deno.serve(async (req) => {
       .eq('user_id', user.id)
       .maybeSingle();
     if (!ra) {
+      const cc = await resolveRestaurantClaimClaimantColumn(admin);
       const { data: claim } = await admin
         .from('restaurant_claims')
-        .select('claimed_by')
+        .select(cc)
         .eq('restaurant_id', restaurantId)
         .eq('status', 'approved')
-        .eq('claimed_by', user.id)
+        .eq(cc, user.id)
         .maybeSingle();
       if (!claim) {
         return jsonResponse({ error: VERIFIED_OWNER_ONLY_CODE }, 403, req);
@@ -98,7 +111,14 @@ Deno.serve(async (req) => {
         .eq('id', (existingMenu as { id: string }).id)
         .select('id, verification_status')
         .single();
-      return jsonResponse({ id: (approvedMenu as { id: string }).id, status: 'approved' });
+      const mid = (approvedMenu as { id: string }).id;
+      await notifyMenuFollowersMenuUpdated(restaurantId, restaurantName, {
+        menuEntryId: mid,
+        excludeUserIds: [user.id],
+        title: restaurantName,
+        body: 'Menü onaylandı. Restoran detayından menüyü açabilirsiniz.',
+      });
+      return jsonResponse({ id: mid, status: 'approved' });
     }
     return jsonResponse({ 
       id: (existingMenu as { id: string }).id, 
@@ -139,6 +159,7 @@ Deno.serve(async (req) => {
       url,
       submitted_by: user.id,
       verification_status: isAdmin ? 'approved' : 'pending',
+      verification_reason: validation.reason,
     })
     .select('id, verification_status')
     .single();
@@ -161,8 +182,21 @@ Deno.serve(async (req) => {
       });
     } catch {}
   }
+  const finalStatus = (entry as { verification_status: string }).verification_status;
+  const newEntryId = (entry as { id: string }).id;
+  if (finalStatus === 'pending') {
+    await notifyAdmins('⏳ Menü Onayı Bekliyor', 'Yeni bir menü yöneticilerin onayını bekliyor.', { screen: 'Admin' });
+  }
+  if (finalStatus === 'approved') {
+    await notifyMenuFollowersMenuUpdated(restaurantId, restaurantName, {
+      menuEntryId: newEntryId,
+      excludeUserIds: [user.id],
+      title: restaurantName,
+      body: 'Yeni menü yayında. Restoran detayından menüyü açın.',
+    });
+  }
 
-  return jsonResponse({ id: (entry as { id: string }).id, status: (entry as { verification_status: string }).verification_status });
+  return jsonResponse({ id: newEntryId, status: finalStatus });
   } catch (e) {
     const msg = String((e as Error).message || 'Beklenmeyen hata');
     const friendly = /submit failed|internal error|unknown error/i.test(msg) ? 'Beklenmeyen hata. Lütfen tekrar deneyin.' : msg;

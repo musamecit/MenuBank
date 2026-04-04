@@ -14,6 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { supabase } from '../lib/supabase';
+import { curatedListTitleField } from '../lib/languages';
 import SafeBannerAd, { BANNER_HEIGHT_TOTAL } from '../components/SafeBannerAd';
 import { List } from 'lucide-react-native';
 
@@ -33,7 +34,7 @@ export default function ListsExploreScreen() {
   const [lists, setLists] = useState<CuratedList[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const lang = i18n.language;
+  const listTitleKey = curatedListTitleField(i18n.language);
 
   const fetchLists = useCallback(async () => {
     const { data } = await supabase
@@ -88,7 +89,7 @@ export default function ListsExploreScreen() {
           onPress={() =>
             navigation.navigate('UserListDetail', {
               listId: item.id,
-              title: lang === 'tr' ? item.title_tr : item.title_en,
+              title: item[listTitleKey],
             })
           }
         >
@@ -96,9 +97,7 @@ export default function ListsExploreScreen() {
             <List size={24} color={colors.accent} />
           </View>
           <View style={styles.textWrap}>
-            <Text style={[styles.listTitle, { color: colors.text }]}>
-              {lang === 'tr' ? item.title_tr : item.title_en}
-            </Text>
+            <Text style={[styles.listTitle, { color: colors.text }]}>{item[listTitleKey]}</Text>
             <Text style={[styles.listSub, { color: colors.subtext }]}>
               {item.restaurant_count} {t('explore.nearby').toLowerCase()}
             </Text>

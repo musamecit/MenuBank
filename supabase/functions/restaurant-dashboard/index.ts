@@ -1,5 +1,6 @@
 import { handleCors, jsonResponse, err400, err401, err403, err404 } from '../_shared/response.ts';
 import { admin, getAuthFromRequest } from '../_shared/auth.ts';
+import { resolveRestaurantClaimClaimantColumn } from '../_shared/claimantColumn.ts';
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -22,12 +23,13 @@ Deno.serve(async (req) => {
         .eq('user_id', user.id)
         .maybeSingle();
       if (!ra) {
+        const cc = await resolveRestaurantClaimClaimantColumn(admin);
         const { data: claim } = await admin
           .from('restaurant_claims')
-          .select('claimed_by')
+          .select(cc)
           .eq('restaurant_id', restaurantId)
           .eq('status', 'approved')
-          .eq('claimed_by', user.id)
+          .eq(cc, user.id)
           .maybeSingle();
         if (!claim) return err403(req);
       }
@@ -73,12 +75,13 @@ Deno.serve(async (req) => {
         .eq('user_id', user.id)
         .maybeSingle();
       if (!ra) {
+        const cc = await resolveRestaurantClaimClaimantColumn(admin);
         const { data: claim } = await admin
           .from('restaurant_claims')
-          .select('claimed_by')
+          .select(cc)
           .eq('restaurant_id', restaurantId)
           .eq('status', 'approved')
-          .eq('claimed_by', user.id)
+          .eq(cc, user.id)
           .maybeSingle();
         if (!claim) return err403(req);
       }

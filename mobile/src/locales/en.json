@@ -36,9 +36,22 @@
     "searchPlaceholder": "Restaurant, city, cuisine...",
     "filterApply": "Apply",
     "filterReset": "Reset",
+    "filterClearAll": "Clear filters",
     "distance1km": "1 km",
     "distance3km": "3 km",
-    "distance5km": "5 km"
+    "distance5km": "5 km",
+    "distance10km": "10 km",
+    "categories": "Categories",
+    "searchNearMeInLists": "Search near me →",
+    "curatedLists": "Featured lists",
+    "catRestaurant": "🍽 Restaurants",
+    "catCafe": "☕ Cafés",
+    "catBar": "🍺 Bars",
+    "catMeyhane": "🥃 Meyhanes",
+    "catFastfood": "🍔 Fast food",
+    "catBistro": "🥗 Bistro & lounge",
+    "catCoffee": "☕ Coffee shops",
+    "catBakery": "🥐 Bakery & desserts"
   },
   "search": {
     "placeholder": "Search restaurants...",
@@ -63,13 +76,17 @@
     "rating": "Rating",
     "noMenu": "No menu added yet",
     "addFirstMenu": "Be the first to add a menu!",
+    "menuPendingAdminApproval": "Menu is awaiting admin approval.",
     "distance": "{{distance}} km",
     "priceVote": "Rate Price",
     "priceCheap": "Cheap",
     "priceAverage": "Average",
     "priceExpensive": "Expensive",
     "priceVoted": "Your vote has been recorded",
-    "ownerCta": "Are you the owner of this restaurant?"
+    "ownerCta": "Are you the owner of this restaurant?",
+    "adminVenueCategory": "Category (admin)",
+    "adminVenueCategoryHint": "Explore list filters use cuisine_primary.",
+    "adminVenueCategorySaved": "Category updated"
   },
   "addMenu": {
     "title": "Add Menu",
@@ -142,7 +159,8 @@
     "cancel": "Cancel",
     "confirm": "Confirm",
     "userId": "User ID",
-    "copied": "Copied!"
+    "copied": "Copied!",
+    "appleAccount": "Signed in with Apple"
   },
   "settings": {
     "title": "Settings",
@@ -159,10 +177,14 @@
     "themeSystem": "System",
     "dateFormat": "Date Format",
     "language": "Language",
+    "chooseLanguage": "Choose language",
+    "menuBlockedWarning": "Your account is temporarily blocked from adding menus.",
+    "blockedUsers": "Blocked users",
     "privacy": "Privacy",
     "analyticsTracking": "Analytics & Tracking",
     "privacyPolicy": "Privacy Policy",
-    "termsOfService": "Terms of Service"
+    "termsOfService": "Terms of Service",
+    "account": "Account"
   },
   "auth": {
     "title": "Sign In",
@@ -177,16 +199,30 @@
   "claim": {
     "ctaButton": "Is this your business?",
     "submitted": "Claim Submitted",
-    "submittedMessage": "Payment received and your ownership claim is under review. We will contact you via the business contact info registered on Google Maps.",
+    "submittedMessage": "Your payment was received and your ownership claim is under review. After we reach you using the contact info for your business on Google Maps, your restaurant ownership will be approved.",
     "alreadyClaimed": "Already Claimed",
     "alreadyClaimedMessage": "An ownership claim already exists for this business.",
     "infoTitle": "Business Ownership Claim",
-    "infoBody": "Claim your business to manage menus, update contact info, and get a verified blue badge.\n\n• Fee: $9.99 USD/month (per restaurant)\n• Payment is processed by Apple\n• Subscription auto-renews monthly\n\nVerification process:\nWe will contact you through the business contact info registered on Google Maps to verify ownership.\n\n⚠️ Payment is non-refundable even if ownership is not approved. Cancel: Settings > Apple ID > Subscriptions.",
-    "infoProceed": "Pay $9.99 & Submit Claim",
+    "infoBody": "Claim your business to manage menus, update contact info, and get a verified blue badge.\n\n• Fee: $49.99 USD/month (per restaurant)\n• Payment is processed by Apple\n• Subscription auto-renews monthly\n\nVerification process:\nWe will contact you through the business contact info registered on Google Maps to verify ownership.\n\n⚠️ Payment is non-refundable even if ownership is not approved. Cancel: Settings > Apple ID > Subscriptions.",
+    "infoProceed": "Pay $49.99 & Submit Claim",
+    "featurePriceLine": "Only $49.99/month (cancel anytime)",
+    "startSub": "Start subscription ($49.99/mo)",
+    "submitWithSub": "Submit claim (payment already recorded for this business)",
+    "storeLoadError": "Could not load subscription ({{productId}}). Please check your connection.",
+    "storeLoadErrorDetail": "{{productId}} could not be loaded from the store. On TestFlight or a slow connection, wait and try again.",
+    "retryLoad": "Try again",
     "infoCancel": "Cancel",
     "loginRequired": "You need to sign in to claim a business.",
     "paymentFailed": "Payment could not be completed. Claim was not submitted.",
-    "paymentSuccess": "Payment successful! Submitting your claim..."
+    "paymentSuccess": "Payment successful! Submitting your claim...",
+    "requiresFreshStore": "Your previous ownership claim was rejected. To submit a new claim you must complete the store purchase step again (an active subscription alone is not enough).",
+    "oneBusinessOnlyTitle": "One business only",
+    "oneBusinessOnlyBody": "A user can only own one business!",
+    "monthlyRetryTitle": "Limit for this month",
+    "monthlyRetryBody": "A claim for another business was rejected this month. You cannot start a claim for a different business in the same calendar month; try again next month or contact support.",
+    "pendingNoticeTitle": "Claim under review",
+    "pendingNoticeBody": "You already submitted an ownership claim for this business; it is pending review. No further payment step is needed.",
+    "subscriptionRenewalNote": "Note: Your subscription renewing each month in the App Store is not treated as a new in-app purchase step. It does not replace the store flow required after a rejected claim."
   },
   "report": {
     "title": "Report Menu",
@@ -197,11 +233,14 @@
     "other": "Other",
     "details": "Details (optional)",
     "submit": "Report",
-    "success": "Your report has been received",
-    "alreadyReported": "You have already reported this menu",
+    "successTitle": "Thank you",
+    "success": "Your report has been received. Our team will review it.",
+    "alreadyReportedTitle": "Notice",
+    "alreadyReported": "You have already reported this menu.",
     "loginRequired": "Sign in to report",
     "confirmTitle": "Report Menu",
-    "confirmMessage": "Are you sure you want to report this menu?"
+    "confirmMessage": "Are you sure you want to report this menu?",
+    "blockUser": "Block user"
   },
   "lists": {
     "myLists": "My Lists",
@@ -215,14 +254,19 @@
     "addRestaurant": "Add Restaurant",
     "removeRestaurant": "Remove Restaurant",
     "empty": "This list is empty",
-    "maxLists": "Maximum 10 lists allowed"
+    "maxLists": "Maximum 10 lists allowed",
+    "newListDefaultName": "My list {{n}}"
   },
   "notifications": {
     "genericTitle": "Notification",
     "menuUpdateTitle": "New menu added",
+    "menuUpdateShort": "Menu updated.",
     "priceChangeTitle": "Price update",
     "genericBody": "Updates for restaurants you follow.",
-    "empty": "You have no notifications yet."
+    "empty": "You have no notifications yet.",
+    "deleteTitle": "Delete notification",
+    "deleteConfirm": "Remove this notification from your list?",
+    "deleteOne": "Delete notification"
   },
   "errors": {
     "generic": "An error occurred",
@@ -245,6 +289,12 @@
     "title": "Admin Panel",
     "pendingMenus": "Pending menus",
     "pendingMenusSub": "No pending menu",
+    "pendingMenusHint": "Menu changes for live venues only",
+    "pendingEstablishments": "Pending establishments",
+    "pendingEstablishmentsSub": "No new venue awaiting approval",
+    "approveEstablishment": "Approve establishment",
+    "rejectEstablishment": "Reject establishment",
+    "rejectEstablishmentConfirm": "The venue and its draft data will be permanently deleted. Continue?",
     "hiddenMenus": "Hidden menus",
     "hiddenMenusSub": "No hidden menu",
     "restaurantsReview": "Restaurants (under review / disabled)",
@@ -271,7 +321,10 @@
     "unbanUser": "Unban User",
     "noPermission": "You don't have access to this page",
     "disableRestaurant": "Disable restaurant",
-    "enableRestaurant": "Re-enable restaurant",
+    "enableRestaurant": "Send for review",
+    "enableRestaurantSub": "Goes to pending establishments before going live again",
+    "deleteRestaurant": "Delete from database",
+    "deleteRestaurantConfirm": "Are you sure you want to permanently delete this restaurant? This action cannot be undone.",
     "openMenu": "Open Menu",
     "viewRestaurant": "View Restaurant"
   },
@@ -284,6 +337,7 @@
     "back": "Back",
     "loading": "Loading...",
     "save": "Save",
+    "warning": "Warning",
     "cancel": "Cancel",
     "delete": "Delete",
     "edit": "Edit",
@@ -294,6 +348,7 @@
     "ok": "OK",
     "seeAll": "See All",
     "retry": "Retry",
+    "search": "Search...",
     "share": "Share",
     "signOut": "Sign out"
   },

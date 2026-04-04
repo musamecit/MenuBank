@@ -27,7 +27,7 @@ export default function TermsPage() {
       <p>By uploading content, you grant MenuBank a non-exclusive license to display it. You must not upload illegal, offensive, or misleading content.</p>
 
       <h2 style={{ fontSize: 20, fontWeight: 600, marginTop: 24 }}>5. Subscriptions</h2>
-      <p>Restaurant owners may subscribe to the Verified Badge plan for $9.99 USD/month. Subscriptions auto-renew and can be cancelled via Apple ID settings.</p>
+      <p>Restaurant owners may subscribe to the Verified Badge plan for $49.99 USD/month. Subscriptions auto-renew and can be cancelled via Apple ID settings.</p>
 
       <h2 style={{ fontSize: 20, fontWeight: 600, marginTop: 24 }}>6. Disclaimers</h2>
       <p>MenuBank is provided &quot;as is&quot; without warranties. Restaurant data is sourced from third parties.</p>

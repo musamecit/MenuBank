@@ -1,4 +1,5 @@
-import { Linking, Platform } from 'react-native';
+import { Linking, Platform, Alert } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 
 const WEB_BASE = 'https://menubank.app';
 
@@ -43,8 +44,17 @@ export function openInMaps(lat: number, lng: number, name?: string) {
 export function openUrl(url: string) {
   if (!url) return;
   const trimmed = url.trim();
+  
+  // Whitelist explicit safe schemes
+  if (/^(javascript|data|file|vbs):/i.test(trimmed)) {
+    Alert.alert('Güvenlik Uyarısı', 'Bu bağlantı güvenli olmadığı için engellendi.');
+    return;
+  }
+  
   const safeUrl = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  Linking.openURL(safeUrl).catch(() => {});
+  WebBrowser.openBrowserAsync(safeUrl).catch(() => {
+    Alert.alert('Bağlantı Hatası', 'Bu bağlantı açılamadı. Link bozuk olabilir.');
+  });
 }
 
 export function shareRestaurantUrl(restaurantId: string, name: string) {

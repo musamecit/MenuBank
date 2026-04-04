@@ -93,20 +93,75 @@ export async function submitRestaurantClaim(
     headers,
     body: JSON.stringify(body),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? 'Claim failed');
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    detail?: string;
+    message?: string;
+  };
+  if (!res.ok) {
+    throw new Error(data.error ?? data.detail ?? data.message ?? 'Claim failed');
+  }
   return data as { status: string; id?: string };
 }
 
-export async function getOwnerClaimStatuses(): Promise<
-  { restaurant_id: string; status: string }[]
-> {
+export type OwnerClaimRow = {
+  restaurant_id: string;
+  status: string;
+  reviewed_at?: string | null;
+};
+
+export async function getOwnerClaimStatuses(): Promise<OwnerClaimRow[]> {
   const { data: session } = await supabase.auth.getSession();
   const userId = session.session?.user?.id;
   if (!userId) return [];
-  const { data } = await supabase
+
+  const byClaimed = await supabase
     .from('restaurant_claims')
-    .select('restaurant_id, status')
+    .select('restaurant_id, status, reviewed_at')
     .eq('claimed_by', userId);
-  return (data ?? []) as { restaurant_id: string; status: string }[];
+
+  if (!byClaimed.error) {
+    return (byClaimed.data ?? []) as OwnerClaimRow[];
+  }
+
+  const em = (byClaimed.error.message || '').toLowerCase();
+  if (em.includes('claimed_by') || em.includes('does not exist') || em.includes('column')) {
+    const byUserId = await supabase
+      .from('restaurant_claims')
+      .select('restaurant_id, status, reviewed_at')
+      .eq('user_id', userId);
+    if (!byUserId.error) {
+      return (byUserId.data ?? []) as OwnerClaimRow[];
+    }
+  }
+
+  return [];
+}
+
+/** Reddedilmiş talep sonrası true: abonelikle ödeme atlanmadan yeni talep gönderilemez. */
+export async function fetchClaimSubmissionGate(): Promise<{ needsReverify: boolean }> {
+  const { data: session } = await supabase.auth.getSession();
+  const userId = session.session?.user?.id;
+  if (!userId) return { needsReverify: false };
+  const { data } = await supabase
+    .from('user_profiles')
+    .select('claim_needs_store_reverify')
+    .eq('id', userId)
+    .maybeSingle();
+  return {
+    needsReverify: (data as { claim_needs_store_reverify?: boolean } | null)?.claim_needs_store_reverify === true,
+  };
+}
+
+/** Mağaza satın alma akışı başarılı olduktan sonra (reddetme kilidini kaldırır). */
+export async function ackClaimStorePurchase(): Promise<void> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/claim-store-ack`, {
+    method: 'POST',
+    headers,
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? 'Mağaza doğrulaması tamamlanamadı');
+  }
 }

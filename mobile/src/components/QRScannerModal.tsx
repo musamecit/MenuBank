@@ -1,18 +1,41 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Alert, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Linking } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
-const isValidUrl = (str: string): boolean => /^https?:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(str.trim());
+/** İlk http(s) URL parçasını çıkar (QR bazen metin + URL içerir) */
+function extractUrlCandidate(raw: string): string {
+  const s = raw.replace(/^\uFEFF/g, '').trim();
+  const m = s.match(/https?:\/\/[^\s<>"']+/i);
+  if (m) return m[0].trim();
+  return s;
+}
 
-/** Normalize scanned URL: trim whitespace, ensure lowercase scheme */
-const normalizeUrl = (str: string): string => {
-  const trimmed = str.trim();
-  return trimmed.replace(/^(https?):\/\//i, (m) => m.toLowerCase());
-};
+/**
+ * Menü linki: http(s) + geçerli host. Şemasız `ornek.com/yol` için https eklenir.
+ * Eski regex alt alan adlarını / uzun TLD’leri yanlış reddedebiliyordu.
+ */
+function normalizeMenuUrlFromScan(raw: string): string | null {
+  let s = extractUrlCandidate(raw).replace(/\u200B/g, '');
+  if (!s) return null;
+  if (!/^https?:\/\//i.test(s)) {
+    const hostPath = s.replace(/^\/+/, '');
+    if (!/^[\w.-]+\.[a-z0-9.-]{2,}/i.test(hostPath.split('/')[0] ?? '')) return null;
+    s = `https://${hostPath}`;
+  }
+  try {
+    const u = new URL(s);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    const host = u.hostname.replace(/\.$/, '');
+    if (!host || !host.includes('.')) return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
 
 interface QRScannerModalProps {
   visible: boolean;
@@ -27,12 +50,14 @@ export default function QRScannerModal({ visible, onClose, onScan }: QRScannerMo
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [mountError, setMountError] = useState<string | null>(null);
+  const [scanError, setScanError] = useState(false);
   const scannedRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
       setScanned(false);
       setMountError(null);
+      setScanError(false);
       scannedRef.current = false;
     }
   }, [visible]);
@@ -43,29 +68,35 @@ export default function QRScannerModal({ visible, onClose, onScan }: QRScannerMo
 
   const handleClose = useCallback(() => {
     setScanned(false);
+    setScanError(false);
     scannedRef.current = false;
     onClose();
   }, [onClose]);
+
+  const dismissScanError = useCallback(() => {
+    setScanError(false);
+    scannedRef.current = false;
+  }, []);
 
   const handleBarCodeScanned = useCallback(
     ({ data }: { type: string; data: string }) => {
       if (scannedRef.current) return;
       const trimmed = (data || '').trim();
-      if (isValidUrl(trimmed)) {
+      const url = normalizeMenuUrlFromScan(trimmed);
+      if (url) {
         scannedRef.current = true;
         setScanned(true);
-        onScan(normalizeUrl(trimmed));
+        onScan(url.replace(/^(https?):\/\//i, (_, p) => `${p.toLowerCase()}://`));
         handleClose();
       } else {
-        Alert.alert(
-          t('addMenu.invalidQR'),
-          t('addMenu.invalidQRMessage'),
-          [{ text: t('common.ok') }],
-        );
+        scannedRef.current = true;
+        setScanError(true);
       }
     },
-    [onScan, handleClose, t],
+    [onScan, handleClose],
   );
+
+  const cameraScanEnabled = !scanned && !scanError;
 
   if (!visible) return null;
 
@@ -136,7 +167,7 @@ export default function QRScannerModal({ visible, onClose, onScan }: QRScannerMo
             style={StyleSheet.absoluteFillObject}
             facing="back"
             barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-            onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+            onBarcodeScanned={cameraScanEnabled ? handleBarCodeScanned : undefined}
             onMountError={handleMountError}
           />
           <View style={styles.overlay} pointerEvents="box-none">
@@ -154,6 +185,23 @@ export default function QRScannerModal({ visible, onClose, onScan }: QRScannerMo
           >
             <X size={24} color="#fff" />
           </TouchableOpacity>
+          {scanError ? (
+            <View style={styles.errorOverlay} pointerEvents="auto">
+              <View style={[styles.errorCard, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.errorTitle, { color: colors.text }]}>{t('addMenu.invalidQR')}</Text>
+                <Text style={[styles.errorBody, { color: colors.textSecondary }]}>
+                  {t('addMenu.invalidQRMessage')}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.errorOkBtn, { backgroundColor: colors.accent }]}
+                  onPress={dismissScanError}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.errorOkText}>{t('common.ok')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
         </View>
       </View>
     </Modal>
@@ -214,5 +262,40 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  errorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorCard: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 16,
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  errorBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  errorOkBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  errorOkText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

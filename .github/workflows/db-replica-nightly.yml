@@ -1,25 +1,27 @@
-# Her gece otomatik: production Postgres → yedek Supabase projesi (public şema).
-# Zaman: ~Türkiye 00:01 (GitHub cron UTC; aşağıdaki satır TR 00:01 civarı).
+# Production → yedek Supabase (public şema).
 #
-# Kurulum (bir kez):
-#   1) Repo GitHub'a push edilsin (varsayılan dal = schedule'ın çalıştığı dal).
-#   2) Settings → Secrets and variables → Actions → New repository secret
-#      - SOURCE_DATABASE_URL  (prod: postgresql://postgres:ŞİFRE@db.xxx.supabase.co:5432/postgres)
-#      - TARGET_DATABASE_URL  (yedek: aynı format)
-#   3) Settings → Actions → General → Actions permissions: "Allow all actions" veya org izni.
+# ÖNEMLİ — GitHub Actions IPv6 desteklemez. Supabase "Direct connection"
+# (db.xxx.supabase.co) varsayılan olarak IPv6'dır; runner'dan bağlanılamaz.
+# SOURCE_DATABASE_URL ve TARGET_DATABASE_URL için mutlaka:
+#   Dashboard → Connect → "Session pooler" URI kullanın
+#   (host: *.pooler.supabase.com, port 5432)
+# Ayrıntı: https://supabase.com/docs/guides/database/connecting-to-postgres
 #
-# Ana veritabanı: script yalnızca pg_dump ile okur; yazma yalnızca TARGET üzerinde.
+# Zaman: ~TR 00:01 (UTC cron 21:01)
 
 name: Nightly database replica backup
 
 on:
   schedule:
-    # UTC 21:01 ≈ Türkiye 00:01 (ertesi gün, UTC+3)
     - cron: "1 21 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# Node 24 uyarısı (checkout): https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 concurrency:
   group: db-replica-backup
@@ -30,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Secrets kontrolü
         env:
@@ -38,15 +40,19 @@ jobs:
           DST: ${{ secrets.TARGET_DATABASE_URL }}
         run: |
           if [ -z "$SRC" ] || [ -z "$DST" ]; then
-            echo "::error::Eksik secret: SOURCE_DATABASE_URL ve TARGET_DATABASE_URL tanımlayın (Repo Settings → Secrets)."
+            echo "::error::Eksik secret: SOURCE_DATABASE_URL ve TARGET_DATABASE_URL."
             exit 1
           fi
 
-      - name: PostgreSQL client + dig (IPv4 DNS)
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16 dnsutils
+      - name: Supabase — Session pooler zorunluluğu (GitHub = IPv4)
+        env:
+          SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
+          TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
+        run: bash scripts/ci-require-supabase-session-pooler.sh
 
-      # Hangi uçta hata olduğunu logda net görmek için (şifreler maskelenir)
-      # libpq: PGHOSTADDR=IPv4 + PGHOST=hostname (TLS SNI). URI ?hostaddr= runner'da IPv6 seçmeye devam edebiliyor.
+      - name: PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
       - name: Kaynak DB bağlantı testi
         env:
           PGSSLMODE: require
@@ -54,8 +60,8 @@ jobs:
           SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
         run: |
           set -euo pipefail
-          eval "$(python3 scripts/pg_ci_libpq_env.py SOURCE_DATABASE_URL)"
-          psql -v ON_ERROR_STOP=1 -c "SELECT 1 AS source_ok;"
+          source scripts/pg-url-normalize.sh
+          psql "$(finalize_pg_url "$SOURCE_DATABASE_URL")" -v ON_ERROR_STOP=1 -c "SELECT 1 AS source_ok;"
 
       - name: Hedef DB bağlantı testi
         env:
@@ -64,17 +70,14 @@ jobs:
           TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
         run: |
           set -euo pipefail
-          eval "$(python3 scripts/pg_ci_libpq_env.py TARGET_DATABASE_URL)"
-          psql -v ON_ERROR_STOP=1 -c "SELECT 1 AS target_ok;"
+          source scripts/pg-url-normalize.sh
+          psql "$(finalize_pg_url "$TARGET_DATABASE_URL")" -v ON_ERROR_STOP=1 -c "SELECT 1 AS target_ok;"
 
       - name: Yedekle (prod salt okunur)
         env:
           PGSSLMODE: require
           PGCONNECT_TIMEOUT: "30"
-          REPLICA_PREFER_IPV4: "1"
-          # Supabase + pg_dump: read_only oturumu bazen pg_dump'ı düşürür; CI'da kapalı
           REPLICA_SOURCE_READ_ONLY_GUARD: "0"
-          # İlk kurulum / hedef temizse --clean gerekmez; DROP zinciri hata verirse 0 kalsın
           REPLICA_SCHEMA_CLEAN: "0"
           SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
           TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}

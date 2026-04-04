@@ -1,11 +1,12 @@
 import { handleCors, jsonResponse, err400, err401 } from '../_shared/response.ts';
 import { admin, getAuthFromRequest } from '../_shared/auth.ts';
+import { notifyAdmins } from '../_shared/notifyAdmins.ts';
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
 
-  const { user } = await getAuthFromRequest(req);
+  const { user, isAdmin } = await getAuthFromRequest(req);
   if (!user) return err401(req);
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -23,7 +24,7 @@ Deno.serve(async (req) => {
     .from('restaurants')
     .select('id')
     .eq('place_id', placeId)
-    .in('status', ['active', 'disabled'])
+    .in('status', ['active', 'disabled', 'pending_approval'])
     .is('deleted_at', null)
     .maybeSingle();
 
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
     lng: (body.lng as number) ?? null,
     cuisine_primary: (body.cuisine_primary as string) ?? null,
     contact_phone: (body.contact_phone as string) ?? null,
-    status: 'active',
+    status: isAdmin ? 'active' : 'pending_approval',
     created_by: user.id,
   };
 
@@ -53,6 +54,14 @@ Deno.serve(async (req) => {
     .single();
 
   if (insertError) return jsonResponse({ error: insertError.message }, 500, req);
+
+  if (!isAdmin && insertData.status === 'pending_approval') {
+    await notifyAdmins(
+      '🏪 Onay bekleyen işletme',
+      `${name}: Yeni işletme kaydı (create-restaurant) admin onayı bekliyor.`,
+      { screen: 'Admin' },
+    );
+  }
 
   // Enrich from Google Places
   if (inserted && !placeId.startsWith('seed-')) {

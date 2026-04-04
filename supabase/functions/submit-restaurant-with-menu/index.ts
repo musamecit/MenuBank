@@ -4,6 +4,10 @@
  */
 import { handleCors, jsonResponse, err400, err401, err429 } from '../_shared/response.ts';
 import { admin, getAuthFromRequest } from '../_shared/auth.ts';
+import { validateMenuUrl } from '../_shared/validateMenuUrl.ts';
+import { notifyAdmins } from '../_shared/notifyAdmins.ts';
+import { notifyMenuFollowersMenuUpdated } from '../_shared/notifyMenuFollowers.ts';
+import { resolveRestaurantClaimClaimantColumn } from '../_shared/claimantColumn.ts';
 
 Deno.serve(async (req) => {
   try {
@@ -30,6 +34,12 @@ Deno.serve(async (req) => {
     new URL(url);
   } catch {
     return err400(req, 'Geçersiz URL. http veya https ile başlamalı.');
+  }
+
+  // Advanced Menu URL Validation (Scoring & Safety checks)
+  const validation = await validateMenuUrl(url);
+  if (validation.action === 'reject') {
+    return err400(req, validation.reason);
   }
 
   // Rate limit
@@ -61,18 +71,26 @@ Deno.serve(async (req) => {
     .from('restaurants')
     .select('id')
     .eq('place_id', placeId)
-    .in('status', ['active', 'disabled'])
+    .in('status', ['active', 'disabled', 'pending_approval'])
     .is('deleted_at', null)
     .maybeSingle();
 
   if (existing) {
     const restaurantId = (existing as { id: string }).id;
-    const { data: rest } = await admin.from('restaurants').select('is_verified').eq('id', restaurantId).single();
+    const { data: rest } = await admin.from('restaurants').select('is_verified, name').eq('id', restaurantId).single();
     const isVerified = (rest as { is_verified?: boolean })?.is_verified === true;
+    const restName = (rest as { name?: string })?.name ?? name;
     if (isVerified && !isAdmin) {
       const { data: ra } = await admin.from('restaurant_admins').select('user_id').eq('restaurant_id', restaurantId).eq('user_id', user.id).maybeSingle();
       if (!ra) {
-        const { data: claim } = await admin.from('restaurant_claims').select('claimed_by').eq('restaurant_id', restaurantId).eq('status', 'approved').eq('claimed_by', user.id).maybeSingle();
+        const cc = await resolveRestaurantClaimClaimantColumn(admin);
+        const { data: claim } = await admin
+          .from('restaurant_claims')
+          .select(cc)
+          .eq('restaurant_id', restaurantId)
+          .eq('status', 'approved')
+          .eq(cc, user.id)
+          .maybeSingle();
         if (!claim) {
           return jsonResponse({ error: 'verified_restaurant_owner_only' }, 403, req);
         }
@@ -104,6 +122,7 @@ Deno.serve(async (req) => {
       url,
       submitted_by: user.id,
       verification_status: isAdmin ? 'approved' : 'pending',
+      verification_reason: validation.reason,
     }).select('id, verification_status').single();
     if (menuErr) {
       const msg = menuErr.message || 'Veritabanı hatası';
@@ -115,7 +134,24 @@ Deno.serve(async (req) => {
         await admin.from('rate_limit_events').insert({ user_id: user.id, event_type: 'restaurant_submit_menu' });
       } catch {}
     }
-    return jsonResponse({ id: (entry as { id: string }).id, status: (entry as { verification_status: string }).verification_status });
+    const finalStatus = (entry as { verification_status: string }).verification_status;
+    const entryId = (entry as { id: string }).id;
+    if (finalStatus === 'pending') {
+      await notifyAdmins(
+        '⏳ Menü onayı',
+        `${restName}: Mevcut işletme için yeni menü admin onayı bekliyor.`,
+        { screen: 'Admin' },
+      );
+    }
+    if (finalStatus === 'approved') {
+      await notifyMenuFollowersMenuUpdated(restaurantId, restName, {
+        menuEntryId: entryId,
+        excludeUserIds: [user.id],
+        title: restName,
+        body: 'Yeni menü yayında. Restoran detayından menüyü açın.',
+      });
+    }
+    return jsonResponse({ id: entryId, status: finalStatus });
   }
 
   // 3. Restoran ve Menü Oluştur (Atomik taklidi)
@@ -132,8 +168,8 @@ Deno.serve(async (req) => {
       lat: (body.lat as number) ?? null,
       lng: (body.lng as number) ?? null,
       cuisine_primary: categorySlug ?? null,
-      status: 'active',
-      created_by: user.id
+      status: isAdmin ? 'active' : 'pending_approval',
+      created_by: user.id,
     })
     .select('id')
     .single();
@@ -154,7 +190,8 @@ Deno.serve(async (req) => {
       restaurant_id: restaurantId,
       url: url,
       submitted_by: user.id,
-      verification_status: isAdmin ? 'approved' : 'pending'
+      verification_status: isAdmin ? 'approved' : 'pending',
+      verification_reason: validation.reason
     })
     .select('id, verification_status')
     .single();
@@ -177,6 +214,21 @@ Deno.serve(async (req) => {
   console.log('Menu Insert Success:', newMenu);
   const menuEntryId = (newMenu as { id: string }).id;
   const menuStatus = (newMenu as { verification_status: string }).verification_status;
+  if (menuStatus === 'pending') {
+    await notifyAdmins(
+      '🏪 Onay bekleyen işletme',
+      `${name}: Yeni işletme ve menü admin panelinde onay bekliyor.`,
+      { screen: 'Admin' },
+    );
+  }
+  if (menuStatus === 'approved') {
+    await notifyMenuFollowersMenuUpdated(restaurantId, name, {
+      menuEntryId,
+      excludeUserIds: [user.id],
+      title: name,
+      body: 'Yeni menü yayında. Restoran detayından menüyü açın.',
+    });
+  }
 
   // c. Restoran Admini ekle
   try {

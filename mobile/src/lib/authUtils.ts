@@ -38,6 +38,20 @@ export async function signInWithApple() {
     token: credential.identityToken,
   });
   if (error) throw error;
+
+  // Apple ad/soyad yalnızca ilk girişte credential ile gelir; JWT’de olmaz — user_metadata’ya yaz.
+  if (credential.fullName) {
+    const gn = credential.fullName.givenName?.trim() ?? '';
+    const fn = credential.fullName.familyName?.trim() ?? '';
+    const full = [gn, fn].filter(Boolean).join(' ').trim();
+    if (full) {
+      const data: Record<string, string> = { full_name: full };
+      if (gn) data.given_name = gn;
+      if (fn) data.family_name = fn;
+      const { error: metaErr } = await supabase.auth.updateUser({ data });
+      if (metaErr) console.warn('Apple fullName → user_metadata', metaErr);
+    }
+  }
 }
 
 export async function signOut() {

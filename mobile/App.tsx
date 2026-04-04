@@ -9,9 +9,11 @@ import ErrorBoundary from './src/components/ErrorBoundary';
 import CrashScreen from './src/components/CrashScreen';
 import RootNavigator from './src/navigation/RootNavigator';
 import { trackActiveDate } from './src/lib/analytics';
-import { registerPushToken } from './src/lib/notifications';
+import { registerPushToken, setupNotificationChannels } from './src/lib/notifications';
 import { queryClient } from './src/lib/queryClient';
 import { subscribeCrash } from './src/utils/crashHandler';
+import { setupPurchases } from './src/lib/purchases';
+import { initializeAds } from './src/lib/ads';
 import './src/lib/i18n';
 
 function AppContent() {
@@ -44,6 +46,9 @@ export default function App() {
   const [globalError, setGlobalError] = useState<Error | null>(null);
 
   useEffect(() => {
+    void initializeAds();
+    setupPurchases(); // Initialize purchases
+    void setupNotificationChannels();
     return subscribeCrash((err) => setGlobalError(err));
   }, []);
 

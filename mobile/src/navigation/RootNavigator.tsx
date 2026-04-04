@@ -20,6 +20,8 @@ import AdminScreen from '../screens/AdminScreen';
 import ListsExploreScreen from '../screens/ListsExploreScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
 import NotificationScreen from '../screens/NotificationScreen';
+import CategoryListScreen from '../screens/CategoryListScreen';
+import BlockedUsersScreen from '../screens/BlockedUsersScreen';
 
 export type RootStackParamList = {
   Onboarding: undefined;
@@ -38,6 +40,8 @@ export type RootStackParamList = {
   ListsExplore: undefined;
   Favorites: { initialTab?: 'restaurants' | 'lists' };
   Notifications: undefined;
+  CategoryList: { categorySlug: string; categoryName: string };
+  BlockedUsers: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -101,7 +105,7 @@ export default function RootNavigator() {
       <Stack.Screen name="Tabs" component={TabNavigator} options={{ headerShown: false }} />
       <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={{ title: '', headerBackTitle: t('common.back') }} />
       <Stack.Screen name="Search" component={SearchScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: '' }} />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: '', headerBackTitle: t('common.back') }} />
       <Stack.Screen name="Auth" component={AuthScreen} options={{ presentation: 'modal', headerShown: false }} />
       <Stack.Screen name="UserListDetail" component={UserListDetailScreen} options={({ route }) => ({ title: route.params.title })} />
       <Stack.Screen name="AddToListSearch" component={AddToListSearchScreen} options={{ title: '' }} />
@@ -113,6 +117,8 @@ export default function RootNavigator() {
       <Stack.Screen name="ListsExplore" component={ListsExploreScreen} options={{ title: '' }} />
       <Stack.Screen name="Favorites" component={FavoritesScreen} options={{ title: '' }} />
       <Stack.Screen name="Notifications" component={NotificationScreen} options={{ title: '' }} />
+      <Stack.Screen name="CategoryList" component={CategoryListScreen} options={({ route }) => ({ title: route.params.categoryName })} />
+      <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} options={{ title: t('settings.blockedUsers', 'Engellenen Kullanıcılar') }} />
     </Stack.Navigator>
   );
 }

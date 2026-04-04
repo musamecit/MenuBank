@@ -9,6 +9,8 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -18,7 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/env';
 import {
-  ShieldCheck, X, Check, FileQuestion, EyeOff, Building2, FileText, Globe, RefreshCw,
+  ShieldCheck, X, Check, FileQuestion, EyeOff, Building2, FileText, Globe, RefreshCw, ClipboardList,
 } from 'lucide-react-native';
 import type { ColorSet } from '../theme/colors';
 import type { RootStackParamList } from '../navigation/RootNavigator';
@@ -32,12 +34,25 @@ interface PendingMenu {
   submitted_at: string;
 }
 
+interface PendingEstablishment {
+  id: string;
+  name: string;
+  city_name: string;
+  area_name: string;
+  created_at: string;
+  menu_id?: string;
+  menu_url?: string;
+}
+
 interface PendingClaim {
   id: string;
   restaurant_id: string;
   restaurant_name: string;
-  claimed_by: string;
-  created_at: string;
+  /** Sunucuda claimed_by veya user_id olabilir; kartta kullanılmıyor */
+  claimed_by?: string;
+  /** Legacy rows may only have submitted_at */
+  created_at?: string;
+  submitted_at?: string;
 }
 
 interface AuditEntry {
@@ -114,6 +129,7 @@ export default function AdminScreen() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingEstablishments, setPendingEstablishments] = useState<PendingEstablishment[]>([]);
   const [pendingMenus, setPendingMenus] = useState<PendingMenu[]>([]);
   const [claims, setClaims] = useState<PendingClaim[]>([]);
   const [disabledRestaurantCount, setDisabledRestaurantCount] = useState(0);
@@ -125,7 +141,15 @@ export default function AdminScreen() {
   const [restaurantResults, setRestaurantResults] = useState<RestaurantSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [claimBusyId, setClaimBusyId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DisabledRestaurant | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const deleteTargetIdRef = useRef<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    deleteTargetIdRef.current = deleteTarget?.id ?? null;
+  }, [deleteTarget]);
 
   const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -152,18 +176,25 @@ export default function AdminScreen() {
   }
 
   async function loadData() {
-    const [menuRes, claimRes, disabledRes, domainsRes, misuseRes, auditRes] = await Promise.all([
+    const [menuRes, pendingPlacesRes, claimRes, disabledRes, domainsRes, misuseRes, auditRes] = await Promise.all([
       supabase
         .from('menu_entries')
-        .select('id, url, submitted_at, restaurant_id, restaurants(name)')
+        .select('id, url, submitted_at, restaurant_id, restaurants(name, status)')
         .eq('verification_status', 'pending')
         .order('submitted_at', { ascending: false })
         .limit(50),
       supabase
-        .from('restaurant_claims')
-        .select('id, restaurant_id, claimed_by, created_at, restaurants(name)')
-        .eq('status', 'pending')
+        .from('restaurants')
+        .select('id, name, city_name, area_name, created_at')
+        .eq('status', 'pending_approval')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
+        .limit(50),
+      supabase
+        .from('restaurant_claims')
+        .select('id, restaurant_id, created_at, submitted_at, restaurants(name)')
+        .eq('status', 'pending')
+        .order('submitted_at', { ascending: false })
         .limit(50),
       supabase
         .from('restaurants')
@@ -195,14 +226,51 @@ export default function AdminScreen() {
 
     if (menuRes?.data) {
       setPendingMenus(
-        menuRes.data.map((m: Record<string, unknown>) => ({
-          id: m.id as string,
-          url: m.url as string,
-          restaurant_id: m.restaurant_id as string,
-          restaurant_name: (m.restaurants as { name?: string })?.name ?? '?',
-          submitted_at: m.submitted_at as string,
-        })),
+        menuRes.data
+          .filter((m: Record<string, unknown>) => {
+            const s = (m.restaurants as { status?: string } | null)?.status;
+            return s === 'active' || s === 'disabled';
+          })
+          .map((m: Record<string, unknown>) => ({
+            id: m.id as string,
+            url: m.url as string,
+            restaurant_id: m.restaurant_id as string,
+            restaurant_name: (m.restaurants as { name?: string })?.name ?? '?',
+            submitted_at: m.submitted_at as string,
+          })),
       );
+    }
+
+    if (pendingPlacesRes?.data?.length) {
+      const placeRows = pendingPlacesRes.data as Record<string, unknown>[];
+      const ids = placeRows.map((r) => r.id as string);
+      const { data: pMenus } = await supabase
+        .from('menu_entries')
+        .select('id, url, restaurant_id')
+        .in('restaurant_id', ids)
+        .eq('verification_status', 'pending');
+      const firstByRest = new Map<string, { id: string; url: string }>();
+      (pMenus ?? []).forEach((row: { id: string; url: string; restaurant_id: string }) => {
+        if (!firstByRest.has(row.restaurant_id)) {
+          firstByRest.set(row.restaurant_id, { id: row.id, url: row.url });
+        }
+      });
+      setPendingEstablishments(
+        placeRows.map((r) => {
+          const mu = firstByRest.get(r.id as string);
+          return {
+            id: r.id as string,
+            name: r.name as string,
+            city_name: r.city_name as string,
+            area_name: r.area_name as string,
+            created_at: (r.created_at as string) ?? '',
+            menu_id: mu?.id,
+            menu_url: mu?.url,
+          };
+        }),
+      );
+    } else {
+      setPendingEstablishments([]);
     }
     if (claimRes?.data) {
       setClaims(
@@ -210,8 +278,8 @@ export default function AdminScreen() {
           id: c.id as string,
           restaurant_id: c.restaurant_id as string,
           restaurant_name: (c.restaurants as { name?: string })?.name ?? '?',
-          claimed_by: c.claimed_by as string,
-          created_at: c.created_at as string,
+          created_at: c.created_at as string | undefined,
+          submitted_at: c.submitted_at as string | undefined,
         })),
       );
     }
@@ -247,12 +315,22 @@ export default function AdminScreen() {
     setRefreshing(false);
   }, []);
 
-  async function callAdminAction(action: string, payload: Record<string, string>) {
+  async function callAdminAction(
+    action: string,
+    payload: Record<string, string>,
+    options?: { busyClaimId?: string },
+  ): Promise<boolean> {
+    if (!session?.access_token) {
+      Alert.alert('Error', 'Oturum bulunamadı. Lütfen yeniden giriş yapın.');
+      return false;
+    }
+    const busyId = options?.busyClaimId;
+    if (busyId) setClaimBusyId(busyId);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-actions`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${session?.access_token}`,
+          Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
           apikey: SUPABASE_ANON_KEY,
         },
@@ -263,13 +341,22 @@ export default function AdminScreen() {
         let errMsg = text;
         try {
           const parsed = JSON.parse(text) as { error?: string; message?: string };
-          errMsg = parsed.message ?? parsed.error ?? text;
-        } catch {}
-        throw new Error(errMsg);
+          errMsg = parsed.error ?? parsed.message ?? text;
+        } catch {
+          /* use raw text */
+        }
+        throw new Error(errMsg || `HTTP ${res.status}`);
       }
-      await loadData();
+      // Sunucu işlemi başarılı; liste yenileme ayrı — reload patlarsa silme “başarısız” sayılmasın
+      void loadData().catch((err) => {
+        console.warn('Admin loadData after action failed', err);
+      });
+      return true;
     } catch (e: unknown) {
       Alert.alert('Error', (e as Error).message);
+      return false;
+    } finally {
+      if (busyId) setClaimBusyId(null);
     }
   }
 
@@ -329,21 +416,131 @@ export default function AdminScreen() {
   }
 
   return (
+    <View style={[styles.container, { flex: 1, backgroundColor: colors.background }]}>
     <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 40 }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
     >
       <Text style={[styles.header, { color: colors.text }]}>{t('admin.title')}</Text>
 
       <AdminSection
+        icon={ClipboardList}
+        title={t('admin.pendingEstablishments')}
+        subtitle={
+          pendingEstablishments.length === 0
+            ? t('admin.pendingEstablishmentsSub')
+            : `${pendingEstablishments.length} işletme`
+        }
+        count={pendingEstablishments.length}
+        colors={colors}
+        onPress={() => setExpandedSection(expandedSection === 'establishments' ? null : 'establishments')}
+      />
+      {expandedSection === 'establishments' && (
+        <View style={styles.expanded}>
+          {pendingEstablishments.map((p) => (
+            <View key={p.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>{p.name}</Text>
+              <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+                {`${p.area_name}, ${p.city_name}`}
+              </Text>
+              {p.menu_url ? (
+                <Text style={[styles.cardUrl, { color: colors.accent }]} numberOfLines={2}>{p.menu_url}</Text>
+              ) : null}
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnFirst, { backgroundColor: '#22c55e' }]}
+                  onPress={() => callAdminAction('approve_establishment', { restaurant_id: p.id })}
+                >
+                  <Check size={18} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.actionText}>{t('admin.approveEstablishment')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#ef4444' }]}
+                  onPress={() => {
+                    Alert.alert(
+                      t('common.warning', 'Uyarı'),
+                      t('admin.rejectEstablishmentConfirm'),
+                      [
+                        { text: t('common.cancel'), style: 'cancel' },
+                        {
+                          text: t('admin.rejectEstablishment'),
+                          style: 'destructive',
+                          onPress: () => callAdminAction('reject_establishment', { restaurant_id: p.id }),
+                        },
+                      ],
+                    );
+                  }}
+                >
+                  <X size={18} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.actionText}>{t('admin.rejectEstablishment')}</Text>
+                </TouchableOpacity>
+              </View>
+              {p.menu_url ? (
+                <View style={styles.actionsSecondary}>
+                  <TouchableOpacity
+                    style={[styles.secondaryBtn, { borderColor: colors.border }]}
+                    onPress={() => Linking.openURL(p.menu_url!)}
+                  >
+                    <Text style={[styles.secondaryText, { color: colors.accent }]}>{t('admin.openMenu')}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      )}
+
+      <AdminSection
         icon={FileQuestion}
         title={t('admin.pendingMenus')}
-        subtitle={pendingMenus.length === 0 ? t('admin.pendingMenusSub') : `${pendingMenus.length} menü`}
+        subtitle={t('admin.pendingMenusHint')}
         count={pendingMenus.length}
         colors={colors}
         onPress={() => setExpandedSection(expandedSection === 'menus' ? null : 'menus')}
       />
+      {expandedSection === 'menus' && (
+        <View style={styles.expanded}>
+          {pendingMenus.map((m) => (
+            <View key={m.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>{m.restaurant_name}</Text>
+              <Text style={[styles.cardUrl, { color: colors.accent }]} numberOfLines={1}>{m.url}</Text>
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnFirst, { backgroundColor: '#22c55e' }]}
+                  onPress={() => callAdminAction('approve_menu', { menu_id: m.id })}
+                >
+                  <Check size={18} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.actionText}>{t('admin.approveMenu')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#ef4444' }]}
+                  onPress={() => callAdminAction('reject_menu', { menu_id: m.id })}
+                >
+                  <X size={18} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.actionText}>{t('admin.rejectMenu')}</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.actionsSecondary}>
+                <TouchableOpacity
+                  style={[styles.secondaryBtn, { borderColor: colors.border }]}
+                  onPress={() => Linking.openURL(m.url)}
+                >
+                  <Text style={[styles.secondaryText, { color: colors.accent }]}>{t('admin.openMenu')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.secondaryBtn, { borderColor: colors.accent }]}
+                  onPress={() => navigation.navigate('RestaurantDetail', { restaurantId: m.restaurant_id })}
+                >
+                  <Text style={[styles.secondaryText, { color: colors.accent }]}>{t('admin.viewRestaurant')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
       <AdminSection
         icon={EyeOff}
         title={t('admin.hiddenMenus')}
@@ -354,11 +551,42 @@ export default function AdminScreen() {
       <AdminSection
         icon={Building2}
         title={t('admin.restaurantsReview')}
-        subtitle={disabledRestaurantCount === 0 ? t('admin.restaurantsReviewSub') : `${disabledRestaurantCount} restoran`}
+        subtitle={
+          disabledRestaurantCount === 0
+            ? t('admin.restaurantsReviewSub')
+            : `${disabledRestaurantCount} · ${t('admin.enableRestaurantSub')}`
+        }
         count={disabledRestaurantCount}
         colors={colors}
         onPress={() => setExpandedSection(expandedSection === 'disabled' ? null : 'disabled')}
       />
+      {expandedSection === 'disabled' && (
+        <View style={styles.expanded}>
+          {disabledRestaurants.map((r) => (
+            <View key={r.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>{r.name}</Text>
+              <Text style={[styles.cardSub, { color: colors.textSecondary }]}>{`${r.area_name}, ${r.city_name}`}</Text>
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnFirst, { backgroundColor: '#22c55e' }]}
+                  onPress={() => callAdminAction('enable_restaurant', { restaurant_id: r.id })}
+                >
+                  <Check size={18} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.actionText}>{t('admin.enableRestaurant')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#ef4444' }]}
+                  activeOpacity={0.85}
+                  onPress={() => setDeleteTarget(r)}
+                >
+                  <X size={18} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.actionText}>{t('admin.deleteRestaurant')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Restaurant search */}
       <View style={[styles.searchSection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -407,6 +635,47 @@ export default function AdminScreen() {
         colors={colors}
         onPress={() => setExpandedSection(expandedSection === 'claims' ? null : 'claims')}
       />
+      {expandedSection === 'claims' && (
+        <View style={styles.expanded}>
+          {claims.map((c) => (
+            <View key={c.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>{c.restaurant_name}</Text>
+              <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+                {new Date(c.submitted_at || c.created_at || 0).toLocaleDateString()}
+              </Text>
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={[
+                    styles.actionBtn,
+                    styles.actionBtnFirst,
+                    { backgroundColor: '#22c55e', opacity: claimBusyId === c.id ? 0.7 : 1 },
+                  ]}
+                  disabled={claimBusyId === c.id}
+                  onPress={() => callAdminAction('approve_claim', { claim_id: c.id }, { busyClaimId: c.id })}
+                >
+                  {claimBusyId === c.id ? (
+                    <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
+                  ) : (
+                    <Check size={18} color="#fff" style={{ marginRight: 6 }} />
+                  )}
+                  <Text style={styles.actionText}>{t('admin.approveClaim')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.actionBtn,
+                    { backgroundColor: '#ef4444', opacity: claimBusyId === c.id ? 0.7 : 1 },
+                  ]}
+                  disabled={claimBusyId === c.id}
+                  onPress={() => callAdminAction('reject_claim', { claim_id: c.id }, { busyClaimId: c.id })}
+                >
+                  <X size={18} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.actionText}>{t('admin.rejectClaim')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
       <AdminSection
         icon={Globe}
         title={t('admin.blockedDomains')}
@@ -429,95 +698,6 @@ export default function AdminScreen() {
         colors={colors}
         onPress={() => setExpandedSection(expandedSection === 'audit' ? null : 'audit')}
       />
-
-      {expandedSection === 'menus' && (
-        <View style={styles.expanded}>
-          {pendingMenus.map((m) => (
-            <View key={m.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>{m.restaurant_name}</Text>
-              <Text style={[styles.cardUrl, { color: colors.accent }]} numberOfLines={1}>{m.url}</Text>
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#22c55e' }]}
-                  onPress={() => callAdminAction('approve_menu', { menu_id: m.id })}
-                >
-                  <Check size={18} color="#fff" />
-                  <Text style={styles.actionText}>{t('admin.approveMenu')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#ef4444' }]}
-                  onPress={() => callAdminAction('reject_menu', { menu_id: m.id })}
-                >
-                  <X size={18} color="#fff" />
-                  <Text style={styles.actionText}>{t('admin.rejectMenu')}</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.actionsSecondary}>
-                <TouchableOpacity
-                  style={[styles.secondaryBtn, { borderColor: colors.border }]}
-                  onPress={() => Linking.openURL(m.url)}
-                >
-                  <Text style={[styles.secondaryText, { color: colors.accent }]}>{t('admin.openMenu')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.secondaryBtn, { borderColor: colors.accent }]}
-                  onPress={() => navigation.navigate('RestaurantDetail', { restaurantId: m.restaurant_id })}
-                >
-                  <Text style={[styles.secondaryText, { color: colors.accent }]}>{t('admin.viewRestaurant')}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {expandedSection === 'disabled' && (
-        <View style={styles.expanded}>
-          {disabledRestaurants.map((r) => (
-            <View key={r.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>{r.name}</Text>
-              <Text style={[styles.cardSub, { color: colors.textSecondary }]}>{`${r.area_name}, ${r.city_name}`}</Text>
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#22c55e' }]}
-                  onPress={() => callAdminAction('enable_restaurant', { restaurant_id: r.id })}
-                >
-                  <Check size={18} color="#fff" />
-                  <Text style={styles.actionText}>{t('admin.enableRestaurant')}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {expandedSection === 'claims' && (
-        <View style={styles.expanded}>
-          {claims.map((c) => (
-            <View key={c.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>{c.restaurant_name}</Text>
-              <Text style={[styles.cardSub, { color: colors.textSecondary }]}>{new Date(c.created_at).toLocaleDateString()}</Text>
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#22c55e' }]}
-                  onPress={() => callAdminAction('approve_claim', { claim_id: c.id })}
-                >
-                  <Check size={18} color="#fff" />
-                  <Text style={styles.actionText}>{t('admin.approveClaim')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#ef4444' }]}
-                  onPress={() => callAdminAction('reject_claim', { claim_id: c.id })}
-                >
-                  <X size={18} color="#fff" />
-                  <Text style={styles.actionText}>{t('admin.rejectClaim')}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
       {expandedSection === 'audit' && (
         <View style={styles.expanded}>
           {auditLog.map((a) => (
@@ -529,7 +709,62 @@ export default function AdminScreen() {
           ))}
         </View>
       )}
+
     </ScrollView>
+
+      <Modal
+        visible={!!deleteTarget}
+        transparent
+        animationType="fade"
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        onRequestClose={() => !deleteSubmitting && setDeleteTarget(null)}
+      >
+        <View style={styles.confirmModalRoot}>
+          <Pressable style={styles.confirmModalBackdrop} onPress={() => !deleteSubmitting && setDeleteTarget(null)} />
+          <View style={[styles.confirmModalSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.confirmTitle, { color: colors.text }]}>{t('common.warning', 'Warning')}</Text>
+            <Text style={[styles.confirmBody, { color: colors.textSecondary }]}>
+              {t('admin.deleteRestaurantConfirm')}
+              {deleteTarget ? `\n\n${deleteTarget.name}` : ''}
+            </Text>
+            <View style={styles.confirmActions}>
+              <Pressable
+                style={[styles.confirmBtn, { borderColor: colors.border }]}
+                disabled={deleteSubmitting}
+                onPress={() => setDeleteTarget(null)}
+              >
+                <Text style={{ color: colors.text, fontWeight: '600' }}>{t('common.cancel')}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.confirmBtn, styles.confirmBtnDanger, { opacity: deleteSubmitting ? 0.7 : 1 }]}
+                disabled={deleteSubmitting}
+                android_ripple={{ color: 'rgba(255,255,255,0.3)' }}
+                onPress={() => {
+                  const rid = deleteTargetIdRef.current;
+                  if (!rid || deleteSubmitting) return;
+                  setDeleteSubmitting(true);
+                  void (async () => {
+                    try {
+                      const ok = await callAdminAction('delete_restaurant', { restaurant_id: rid });
+                      if (ok) setDeleteTarget(null);
+                    } finally {
+                      setDeleteSubmitting(false);
+                    }
+                  })();
+                }}
+              >
+                {deleteSubmitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>{t('admin.deleteRestaurant')}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
@@ -562,8 +797,9 @@ function getStyles(colors: ColorSet) {
     cardTitle: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
     cardUrl: { fontSize: 13, marginBottom: 12 },
     cardSub: { fontSize: 13, marginBottom: 12 },
-    actions: { flexDirection: 'row', gap: 10 },
-    actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+    actions: { flexDirection: 'row', alignItems: 'center' },
+    actionBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+    actionBtnFirst: { marginRight: 10 },
     actionText: { color: '#fff', fontSize: 13, fontWeight: '600' },
     auditRow: { padding: 12, borderRadius: 10, marginBottom: 8, borderWidth: 1 },
     auditAction: { fontSize: 14, fontWeight: '600' },
@@ -578,5 +814,30 @@ function getStyles(colors: ColorSet) {
       alignItems: 'center',
     },
     secondaryText: { fontSize: 13, fontWeight: '600' },
+    confirmModalRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+    confirmModalBackdrop: { flex: 1, minHeight: 32 },
+    confirmModalSheet: {
+      marginHorizontal: 20,
+      marginBottom: 36,
+      padding: 20,
+      borderRadius: 16,
+      borderWidth: 1,
+      flexShrink: 0,
+      zIndex: 2,
+      elevation: 12,
+    },
+    confirmTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
+    confirmBody: { fontSize: 15, lineHeight: 22, marginBottom: 20 },
+    confirmActions: { flexDirection: 'row', gap: 12, justifyContent: 'flex-end' },
+    confirmBtn: {
+      paddingVertical: 12,
+      paddingHorizontal: 18,
+      borderRadius: 12,
+      borderWidth: 1,
+      minWidth: 100,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    confirmBtnDanger: { backgroundColor: '#ef4444', borderColor: '#ef4444' },
   });
 }

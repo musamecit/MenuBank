@@ -1,37 +1,55 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
-import { type Session, type User } from '@supabase/supabase-js';
+import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { identifyPurchasesUser, clearPurchasesUser } from '../lib/purchases';
 
-interface AuthContextValue {
+interface AuthContextType {
   session: Session | null;
   user: User | null;
   loading: boolean;
 }
 
-const AuthContext = createContext<AuthContextValue>({ session: null, user: null, loading: true });
+const AuthContext = createContext<AuthContextType>({ session: null, user: null, loading: true });
 
 // Proactively refresh token every 10 minutes to prevent JWT expiry
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
       setLoading(false);
+      
+      if (session?.user) {
+        identifyPurchasesUser(session.user.id);
+      } else {
+        clearPurchasesUser();
+      }
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+      
+      if (session?.user) {
+        identifyPurchasesUser(session.user.id);
+      } else {
+        clearPurchasesUser();
+      }
     });
-    return () => listener.subscription.unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 
   const value = useMemo(
-    () => ({ session, user: session?.user ?? null, loading }),
-    [session, loading],
+    () => ({ session, user, loading }),
+    [session, user, loading],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

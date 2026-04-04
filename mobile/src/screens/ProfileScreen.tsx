@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Clipboard,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Clipboard, ActivityIndicator
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { type NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import {
@@ -12,14 +12,19 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { signOut } from '../lib/authUtils';
 import { supabase } from '../lib/supabase';
-import { getFavoriteCount, getFavorites } from '../lib/favorites';
+import { getFavoriteCount } from '../lib/favorites';
+import { fetchUnreadNotificationCount } from '../lib/userNotifications';
 import { getFollowingCount } from '../lib/userFollows';
 import { getUserLists, createUserList, type UserList } from '../lib/userLists';
 import { getFavoriteCuratedLists } from '../lib/userCuratedListFavorites';
 import { openUrl } from '../lib/linking';
 import { getOwnerClaimStatuses } from '../lib/ownerDashboard';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import LanguagePickerModal from '../components/LanguagePickerModal';
+import { LANGUAGE_NATIVE_NAMES, normalizeAppLanguage } from '../lib/languages';
 import type { ColorSet } from '../theme/colors';
+import type { User } from '@supabase/supabase-js';
+import type { TFunction } from 'i18next';
 
 const PRIVACY_URL = 'https://musamecit.github.io/MenuBank/privacy.html';
 const TERMS_URL = 'https://musamecit.github.io/MenuBank/terms.html';
@@ -33,6 +38,61 @@ interface UserProfile {
   is_admin?: boolean;
 }
 
+function isApplePrivateRelayEmail(email: string | undefined): boolean {
+  if (!email) return false;
+  return email.toLowerCase().includes('privaterelay.appleid.com');
+}
+
+function displayNameFromUser(user: User): string | null {
+  const pick = (o: Record<string, unknown> | undefined): string | null => {
+    if (!o) return null;
+    const full = o.full_name;
+    if (typeof full === 'string' && full.trim()) return full.trim();
+    const name = o.name;
+    if (typeof name === 'string' && name.trim()) return name.trim();
+    const g = typeof o.given_name === 'string' ? o.given_name.trim() : '';
+    const f = typeof o.family_name === 'string' ? o.family_name.trim() : '';
+    const combined = [g, f].filter(Boolean).join(' ').trim();
+    return combined || null;
+  };
+  const fromMeta = pick(user.user_metadata as Record<string, unknown> | undefined);
+  if (fromMeta) return fromMeta;
+  const idData = user.identities?.[0]?.identity_data as Record<string, unknown> | undefined;
+  return pick(idData);
+}
+
+function profileIdentityDisplay(
+  user: User,
+  t: TFunction,
+): { primary: string; secondary: string | null; initial: string } {
+  const email = user.email?.trim() || null;
+  const name = displayNameFromUser(user);
+  const relay = isApplePrivateRelayEmail(email ?? undefined);
+
+  let primary: string;
+  let secondary: string | null = null;
+
+  if (name && email && !relay) {
+    primary = name;
+    secondary = email;
+  } else if (name && relay) {
+    primary = name;
+  } else if (name && !email) {
+    primary = name;
+  } else if (email && !relay) {
+    primary = email;
+  } else if (email && relay) {
+    primary = name ?? t('profile.appleAccount');
+  } else {
+    primary = t('profile.appleAccount');
+  }
+
+  const initialSrc = name || email || primary;
+  const initial = (initialSrc?.charAt(0) || 'U').toUpperCase();
+
+  return { primary, secondary, initial };
+}
+
 export default function ProfileScreen() {
   const { t, i18n } = useTranslation();
   const { colors } = useTheme();
@@ -42,26 +102,54 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [favCount, setFavCount] = useState(0);
   const [followCount, setFollowCount] = useState(0);
+  const [notifUnread, setNotifUnread] = useState(0);
   const [lists, setLists] = useState<UserList[]>([]);
   const [ownerClaims, setOwnerClaims] = useState<{ restaurant_id: string; status: string }[]>([]);
+  const [loadingOut, setLoadingOut] = useState(false);
+  const [languageModalOpen, setLanguageModalOpen] = useState(false);
 
   const styles = useMemo(() => getStyles(colors), [colors]);
 
-  useEffect(() => {
-    if (!user) return;
-    supabase
-      .from('user_profiles')
-      .select('reputation_points, trust_score, invite_code, is_admin')
-      .eq('id', user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) setProfile(data as UserProfile);
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) {
+        setProfile(null);
+        setFavCount(0);
+        setFollowCount(0);
+        setNotifUnread(0);
+        setLists([]);
+        setOwnerClaims([]);
+        return;
+      }
+      let cancelled = false;
+      supabase
+        .from('user_profiles')
+        .select('reputation_points, trust_score, invite_code, is_admin')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!cancelled && data) setProfile(data as UserProfile);
+        });
+      getFavoriteCount(user.id).then((c) => {
+        if (!cancelled) setFavCount(c);
       });
-    getFavoriteCount(user.id).then(setFavCount);
-    getFollowingCount(user.id).then(setFollowCount);
-    getUserLists(user.id).then(setLists);
-    getOwnerClaimStatuses().then(setOwnerClaims);
-  }, [user]);
+      getFollowingCount(user.id).then((c) => {
+        if (!cancelled) setFollowCount(c);
+      });
+      fetchUnreadNotificationCount(user.id).then((c) => {
+        if (!cancelled) setNotifUnread(c);
+      });
+      getUserLists(user.id).then((l) => {
+        if (!cancelled) setLists(l);
+      });
+      getOwnerClaimStatuses().then((o) => {
+        if (!cancelled) setOwnerClaims(o);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [user]),
+  );
 
   const handleLogout = useCallback(async () => {
     await signOut();
@@ -74,8 +162,18 @@ export default function ProfileScreen() {
         text: t('profile.confirm'),
         style: 'destructive',
         onPress: async () => {
-          await supabase.from('user_profiles').update({ deleted_at: new Date().toISOString() }).eq('id', user!.id);
-          await signOut();
+          setLoadingOut(true);
+          try {
+            const { error } = await supabase.functions.invoke('delete-user-account', {
+              method: 'POST',
+            });
+            if (error) throw error;
+            await signOut();
+          } catch (e) {
+            Alert.alert(t('errors.generic'), (e as Error).message);
+          } finally {
+            setLoadingOut(false);
+          }
         },
       },
     ]);
@@ -94,13 +192,21 @@ export default function ProfileScreen() {
       Alert.alert(t('lists.maxLists'));
       return;
     }
-    const title = t('lists.createList');
+    const taken = new Set(lists.map((l) => l.title));
+    let n = lists.length + 1;
+    let title = t('lists.newListDefaultName', { n });
+    while (taken.has(title)) {
+      n += 1;
+      title = t('lists.newListDefaultName', { n });
+    }
     const created = await createUserList(user.id, title, false);
     if (created) {
       setLists((prev) => [created, ...prev]);
       navigation.navigate('UserListDetail', { listId: created.id, title: created.title, isUserList: true });
     }
   }, [user, lists.length, t, navigation]);
+
+  const identity = user ? profileIdentityDisplay(user, t) : null;
 
   if (!user) {
     return (
@@ -139,9 +245,12 @@ export default function ProfileScreen() {
       {/* User account card */}
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <View style={styles.avatarPlaceholder}>
-          <Text style={styles.avatarText}>{user.email?.charAt(0).toUpperCase() ?? 'U'}</Text>
+          <Text style={styles.avatarText}>{identity?.initial ?? 'U'}</Text>
         </View>
-        <Text style={styles.email}>{user.email}</Text>
+        <Text style={styles.profilePrimary}>{identity?.primary}</Text>
+        {identity?.secondary ? (
+          <Text style={[styles.profileSecondary, { color: colors.textSecondary }]}>{identity.secondary}</Text>
+        ) : null}
       </View>
 
       {/* User ID card */}
@@ -178,7 +287,7 @@ export default function ProfileScreen() {
       >
         <Bell size={20} color={colors.accent} />
         <Text style={styles.actionRowText}>{t('settings.notifications')}</Text>
-        <Text style={styles.actionRowCount}>{followCount}</Text>
+        <Text style={styles.actionRowCount}>{notifUnread}</Text>
       </TouchableOpacity>
 
       {/* Admin & Restoran Seç */}
@@ -234,13 +343,7 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      {/* Favori Restoranlarım & Favori Listelerim */}
       <View style={styles.section}>
-        <TouchableOpacity style={styles.listRow} onPress={() => navigation.navigate('Favorites', { initialTab: 'restaurants' })}>
-          <Heart size={16} color={colors.accent} />
-          <Text style={styles.listText}>{t('profile.favoriteRestaurants')}</Text>
-          <ChevronRight size={16} color={colors.textSecondary} />
-        </TouchableOpacity>
         <TouchableOpacity style={styles.listRow} onPress={() => navigation.navigate('Favorites', { initialTab: 'lists' })}>
           <List size={16} color={colors.accent} />
           <Text style={styles.listText}>{t('profile.favoriteLists')}</Text>
@@ -265,21 +368,24 @@ export default function ProfileScreen() {
       {/* Language */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t('profile.languageSelect')}</Text>
-        <View style={styles.langRow}>
-          {['tr', 'en'].map((lng) => (
-            <TouchableOpacity
-              key={lng}
-              style={[styles.langBtn, i18n.language === lng && styles.langBtnActive]}
-              onPress={() => i18n.changeLanguage(lng)}
-            >
-              <Globe size={14} color={i18n.language === lng ? '#fff' : colors.text} />
-              <Text style={[styles.langText, i18n.language === lng && { color: '#fff' }]}>
-                {lng === 'tr' ? 'Türkçe' : 'English'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <TouchableOpacity
+          style={styles.languageRow}
+          onPress={() => setLanguageModalOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={t('settings.chooseLanguage')}
+        >
+          <Globe size={20} color={colors.textSecondary} />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.languageRowHint}>{t('settings.chooseLanguage')}</Text>
+            <Text style={[styles.languageRowValue, { color: colors.text }]}>
+              {LANGUAGE_NATIVE_NAMES[normalizeAppLanguage(i18n.resolvedLanguage ?? i18n.language)]}
+            </Text>
+          </View>
+          <ChevronRight size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
       </View>
+
+      <LanguagePickerModal visible={languageModalOpen} onClose={() => setLanguageModalOpen(false)} />
 
       {/* Links */}
       <View style={styles.section}>
@@ -303,9 +409,15 @@ export default function ProfileScreen() {
         <LogOut size={18} color={colors.error} />
         <Text style={styles.logoutText}>{t('profile.logout')}</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteAccount}>
-        <Trash2 size={18} color={colors.error} />
-        <Text style={styles.deleteText}>{t('profile.deleteAccount')}</Text>
+      <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteAccount} disabled={loadingOut}>
+        {loadingOut ? (
+          <ActivityIndicator size="small" color={colors.error} />
+        ) : (
+          <>
+            <Trash2 size={18} color={colors.error} />
+            <Text style={styles.deleteText}>{t('profile.deleteAccount')}</Text>
+          </>
+        )}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -326,7 +438,8 @@ function getStyles(colors: ColorSet) {
       justifyContent: 'center', alignItems: 'center', marginBottom: 8,
     },
     avatarText: { fontSize: 24, fontWeight: '700', color: colors.accent },
-    email: { fontSize: 15, fontWeight: '600', color: colors.text },
+    profilePrimary: { fontSize: 15, fontWeight: '600', color: colors.text, textAlign: 'center' },
+    profileSecondary: { fontSize: 14, fontWeight: '500', textAlign: 'center', marginTop: 4 },
     userIdValue: { fontSize: 12, color: colors.textSecondary, fontFamily: 'monospace' },
     tapToCopy: { fontSize: 12, color: colors.accent, marginTop: 4 },
     trustDesc: { fontSize: 13, color: colors.textSecondary, marginBottom: 8, alignSelf: 'flex-start' },
@@ -367,13 +480,18 @@ function getStyles(colors: ColorSet) {
     listText: { flex: 1, fontSize: 15, color: colors.text },
     referralRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, backgroundColor: colors.surface, borderRadius: 10, paddingHorizontal: 14 },
     referralCode: { fontSize: 16, fontWeight: '600', color: colors.accent },
-    langRow: { flexDirection: 'row', gap: 10 },
-    langBtn: {
-      flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 16,
-      borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+    languageRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
     },
-    langBtnActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-    langText: { fontSize: 14, color: colors.text },
+    languageRowHint: { fontSize: 12, color: colors.textSecondary, marginBottom: 2 },
+    languageRowValue: { fontSize: 16, fontWeight: '600' },
     linksSection: { marginTop: 40, width: '100%' },
     linkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
     linkText: { flex: 1, fontSize: 15, color: colors.text },

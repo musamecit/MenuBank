@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, StyleSheet, Text, Dimensions } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { initializeAds } from '../lib/ads';
 
-/** Sabit banner yüksekliği - liste paddingBottom için kullanılır */
+/** Sabit banner yüksekliği — liste/scroll padding ile aynı (AdMob BANNER ≈ 50pt) */
 export const BANNER_HEIGHT_TOTAL = 50;
 
 const BANNER_UNIT_ID_PROD = 'ca-app-pub-6812424036943781/2680494724';
-const BANNER_WIDTH = 320;
-const BANNER_HEIGHT = 50;
 
 interface AdModule {
   BannerAd: React.ComponentType<Record<string, unknown>>;
@@ -33,36 +32,38 @@ function loadAdModule(): AdModule | null {
   }
 }
 
-function BannerPlaceholder({ colors }: { colors: { background: string; border: string; textSecondary: string } }) {
-  return (
-    <View style={{ height: BANNER_HEIGHT, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
-      <View
-        style={{
-          width: BANNER_WIDTH,
-          height: BANNER_HEIGHT,
-          backgroundColor: colors.border,
-          borderRadius: 6,
-          justifyContent: 'center',
-          alignItems: 'center',
-          borderWidth: 1,
-          borderColor: colors.border,
-        }}
-      >
-        <Text style={{ fontSize: 11, color: colors.textSecondary }}>Reklam alanı</Text>
-      </View>
-    </View>
-  );
-}
-
 interface SafeBannerAdProps {
-  /** true = ekranın altında sabit (varsayılan), false = inline (ListFooterComponent için) */
   fixed?: boolean;
 }
 
-export default function SafeBannerAd({ fixed = true }: SafeBannerAdProps) {
+const BANNER_W = Math.min(320, Dimensions.get('window').width);
+
+/**
+ * Alt navigasyonun üstünde standart banner (≈320×50). Expo Go’da native modül yoktur — dev build gerekir.
+ */
+export default function SafeBannerAd({ fixed: _fixed = true }: SafeBannerAdProps) {
   const { colors } = useTheme();
   const [adModule, setAdModule] = useState<AdModule | null>(loadAdModule);
-  const [failed, setFailed] = useState(false);
+  const [sdkReady, setSdkReady] = useState(false);
+  const [remountKey, setRemountKey] = useState(0);
+  const failCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await initializeAds();
+      if (!cancelled) {
+        setSdkReady(true);
+        const mod = loadAdModule();
+        if (mod) setAdModule(mod);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!adModule) {
@@ -71,28 +72,89 @@ export default function SafeBannerAd({ fixed = true }: SafeBannerAdProps) {
     }
   }, [adModule]);
 
-  const onAdFailedToLoad = useCallback(() => setFailed(true), []);
+  const onAdFailedToLoad = useCallback((err?: { code?: string; message?: string }) => {
+    if (__DEV__) {
+      console.warn('[SafeBannerAd] load failed', err?.code ?? err?.message ?? err);
+    }
+    failCountRef.current += 1;
+    if (failCountRef.current >= 4) return;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      setRemountKey((k) => k + 1);
+    }, 2500);
+  }, []);
 
-  if (!adModule || failed) {
-    const content = <BannerPlaceholder colors={colors} />;
-    if (!fixed) return content;
-    return content;
+  const onAdLoaded = useCallback(() => {
+    failCountRef.current = 0;
+  }, []);
+
+  const testBannerId = adModule?.TestIds?.BANNER;
+  const unitId = __DEV__ ? (testBannerId ?? BANNER_UNIT_ID_PROD) : BANNER_UNIT_ID_PROD;
+  /** Geliştirmede Google test birimi + tam istek; prod’da kişiselleştirilmemiş */
+  const requestOptions = __DEV__
+    ? undefined
+    : { requestNonPersonalizedAdsOnly: true };
+
+  let adInner: React.ReactNode = null;
+  if (adModule && sdkReady) {
+    const Ad = adModule.BannerAd;
+    const bannerSize = adModule.BannerAdSize.BANNER;
+    adInner = (
+      <View style={[styles.bannerClip, { width: BANNER_W }]}>
+        <Ad
+          key={remountKey}
+          unitId={unitId}
+          size={bannerSize}
+          {...(requestOptions ? { requestOptions } : {})}
+          onAdLoaded={onAdLoaded}
+          onAdFailedToLoad={onAdFailedToLoad}
+        />
+      </View>
+    );
+  } else if (__DEV__ && !adModule) {
+    adInner = (
+      <Text style={[styles.devHint, { color: colors.textSecondary }]} numberOfLines={2}>
+        Ads need a dev build (not Expo Go)
+      </Text>
+    );
   }
 
-  const { BannerAd, BannerAdSize, TestIds } = adModule;
-  const unitId = (__DEV__ ? TestIds?.BANNER : null) ?? BANNER_UNIT_ID_PROD;
-
-  const content = (
-    <View style={{ height: BANNER_HEIGHT, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
-      <BannerAd
-        unitId={unitId}
-        size={BannerAdSize?.BANNER ?? 'BANNER'}
-        requestOptions={{ requestNonPersonalizedAdsOnly: true }}
-        onAdFailedToLoad={onAdFailedToLoad}
-      />
+  return (
+    <View
+      style={[
+        styles.slot,
+        {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+        },
+      ]}
+      accessibilityLabel="Advertisement"
+    >
+      {adInner}
     </View>
   );
-
-  if (!fixed) return content;
-  return content;
 }
+
+const styles = StyleSheet.create({
+  slot: {
+    height: BANNER_HEIGHT_TOTAL,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  bannerClip: {
+    height: BANNER_HEIGHT_TOTAL,
+    maxHeight: BANNER_HEIGHT_TOTAL,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  devHint: {
+    fontSize: 10,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+});

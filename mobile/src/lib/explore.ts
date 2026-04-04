@@ -26,6 +26,29 @@ interface NearbyOptions {
   categorySlug?: string;
 }
 
+function dbCategorySlugToAppSlug(dbSlug: string): string {
+  const s = String(dbSlug).trim();
+  if (s === 'sokak-lezzetleri') return 'street_food';
+  if (s === 'tatli') return 'dessert';
+  if (s === 'diger') return 'other';
+  return s;
+}
+
+function effectiveVenueCategorySlug(
+  row: Record<string, unknown>,
+  idToAppSlug: Map<number, string>,
+): string | null {
+  const cp = row.cuisine_primary;
+  if (cp != null && String(cp).trim() !== '') {
+    return dbCategorySlugToAppSlug(String(cp).trim());
+  }
+  const cid = row.category_id;
+  if (cid == null || cid === '') return null;
+  const n = Number(cid);
+  if (Number.isNaN(n)) return null;
+  return idToAppSlug.get(n) ?? null;
+}
+
 /** Haversine formula to strictly calculate distance between current GPS and target */
 export function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371e3; // Earth radius in meters
@@ -71,10 +94,24 @@ export async function fetchNearby(
       return (data.items ?? []) as NearbyRestaurant[];
     }
   } catch {}
-  return fetchNearbyFallback(lat, lng, radius);
+  return fetchNearbyFallback(lat, lng, radius, options);
 }
 
-async function fetchNearbyFallback(lat: number, lng: number, radius: number): Promise<NearbyRestaurant[]> {
+async function fetchNearbyFallback(
+  lat: number,
+  lng: number,
+  radius: number,
+  options: NearbyOptions = {},
+): Promise<NearbyRestaurant[]> {
+  const { categorySlug } = options;
+  let idToAppSlug = new Map<number, string>();
+  if (categorySlug) {
+    const { data: cats } = await supabase.from('restaurant_categories').select('id, slug');
+    for (const c of cats ?? []) {
+      const row = c as { id: number; slug: string };
+      idToAppSlug.set(Number(row.id), dbCategorySlugToAppSlug(String(row.slug)));
+    }
+  }
   const { data } = await supabase.rpc('get_nearby_restaurants', {
     p_lat: lat,
     p_lng: lng,
@@ -85,13 +122,34 @@ async function fetchNearbyFallback(lat: number, lng: number, radius: number): Pr
   if (ids.length === 0) return [];
   const { data: extra } = await supabase
     .from('restaurants')
-    .select('id, name, city_name, area_name, lat, lng, image_url, is_verified, price_level, google_rating, cuisine_primary, trending_score')
-    .in('id', ids);
+    .select('id, name, city_name, area_name, lat, lng, image_url, is_verified, price_level, google_rating, cuisine_primary, category_id, trending_score')
+    .in('id', ids)
+    .eq('status', 'active')
+    .is('deleted_at', null);
   const map = new Map((extra ?? []).map((e: Record<string, unknown>) => [e.id as string, e]));
-  return (data as { id: string; distance_meters?: number }[]).map((r) => {
-    const e = map.get(r.id) ?? {};
-    return { ...r, ...(e as object) } as NearbyRestaurant;
-  });
+  let items = (data as { id: string; distance_meters?: number }[])
+    .filter((r) => map.has(r.id))
+    .map((r) => {
+      const e = map.get(r.id) ?? {};
+      return { ...r, ...(e as object) } as NearbyRestaurant;
+    });
+  if (categorySlug) {
+    items = items.filter(
+      (i) => effectiveVenueCategorySlug(i as unknown as Record<string, unknown>, idToAppSlug) === categorySlug,
+    );
+  }
+  const categoryListByRating = Boolean(categorySlug && radius > 50000);
+  if (categoryListByRating) {
+    items.sort((a, b) => {
+      const ga = a.google_rating != null ? Number(a.google_rating) : -1;
+      const gb = b.google_rating != null ? Number(b.google_rating) : -1;
+      if (gb !== ga) return gb - ga;
+      return (a.distance_meters ?? 0) - (b.distance_meters ?? 0);
+    });
+  } else {
+    items.sort((a, b) => (a.distance_meters ?? 0) - (b.distance_meters ?? 0));
+  }
+  return items.slice(0, 50);
 }
 
 export interface CuratedList {

@@ -13,6 +13,7 @@ import { getFavoriteCuratedLists } from '../lib/userCuratedListFavorites';
 import RestaurantCard from '../components/RestaurantCard';
 import SafeBannerAd, { BANNER_HEIGHT_TOTAL } from '../components/SafeBannerAd';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { curatedListTitleField } from '../lib/languages';
 import type { ColorSet } from '../theme/colors';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -35,7 +36,7 @@ export default function FavoritesScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const styles = useMemo(() => getStyles(colors), [colors]);
-  const lang = i18n.language === 'tr' ? 'title_tr' : 'title_en';
+  const listTitleKey = curatedListTitleField(i18n.language);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -133,9 +134,14 @@ export default function FavoritesScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.listCard}
-              onPress={() => navigation.navigate('UserListDetail', { listId: item.id, title: item[lang] ?? item.title_tr })}
+              onPress={() =>
+                navigation.navigate('UserListDetail', {
+                  listId: item.id,
+                  title: item[listTitleKey] ?? item.title_en ?? item.title_tr,
+                })
+              }
             >
-              <Text style={styles.listTitle}>{item[lang] ?? item.title_tr}</Text>
+              <Text style={styles.listTitle}>{item[listTitleKey] ?? item.title_en ?? item.title_tr}</Text>
             </TouchableOpacity>
           )}
           ListEmptyComponent={<Text style={styles.emptyText}>{t('explore.noLists')}</Text>}

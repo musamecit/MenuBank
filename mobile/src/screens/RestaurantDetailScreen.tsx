@@ -3,16 +3,22 @@ import {
   View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, Alert, Linking, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
-import { useRoute, type RouteProp } from '@react-navigation/native';
+import { useRoute, useFocusEffect, type RouteProp } from '@react-navigation/native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   Heart, Share2, MapPin, BadgeCheck, ExternalLink, Flag, Star, UserPlus, UserMinus,
-  Phone, Utensils, RefreshCw, Camera,
+  Phone, Utensils, RefreshCw, Camera, Shield,
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { fetchRestaurant, fetchMenuEntries, type Restaurant, type MenuEntry } from '../lib/restaurants';
+import {
+  fetchRestaurant,
+  fetchMenuEntries,
+  restaurantHasPendingMenuForClient,
+  type Restaurant,
+  type MenuEntry,
+} from '../lib/restaurants';
 import { isFavorite, toggleFavorite } from '../lib/favorites';
 import { isFollowing, toggleFollow } from '../lib/userFollows';
 import { shareRestaurant } from '../lib/share';
@@ -22,8 +28,23 @@ import { submitMenu } from '../lib/submitMenu';
 import { supabase } from '../lib/supabase';
 import { signOut } from '../lib/authUtils';
 import { submitReport } from '../lib/report';
+import { blockUser } from '../lib/userBlocks';
 import { logRestaurantView } from '../lib/analytics';
-import { submitRestaurantClaim } from '../lib/ownerDashboard';
+import {
+  submitRestaurantClaim,
+  getOwnerClaimStatuses,
+  fetchClaimSubmissionGate,
+  ackClaimStorePurchase,
+} from '../lib/ownerDashboard';
+import { ADMIN_VENUE_CATEGORIES, appSlugFromStoredCuisine } from '../lib/venueCategories';
+import { adminSetRestaurantVenueCategory } from '../lib/adminVenueCategory';
+import {
+  fetchProducts,
+  purchaseProduct,
+  checkProStatus,
+  OWNER_SUBSCRIPTION_PRODUCT_ID,
+} from '../lib/purchases';
+import type { Subscription } from 'react-native-iap';
 import { Image } from 'expo-image';
 import SafeBannerAd, { BANNER_HEIGHT_TOTAL } from '../components/SafeBannerAd';
 import QRScannerModal from '../components/QRScannerModal';
@@ -44,10 +65,17 @@ export default function RestaurantDetailScreen() {
   const { data: restaurant, isLoading: loading } = useQuery({
     queryKey: ['restaurant', restaurantId],
     queryFn: () => fetchRestaurant(restaurantId),
+    enabled: Boolean(restaurantId),
   });
   const { data: menus = [] } = useQuery({
     queryKey: ['menuEntries', restaurantId],
     queryFn: () => fetchMenuEntries(restaurantId),
+    enabled: Boolean(restaurantId),
+  });
+  const { data: hasPendingMenuApproval = false } = useQuery({
+    queryKey: ['pendingMenuApproval', restaurantId],
+    queryFn: () => restaurantHasPendingMenuForClient(restaurantId),
+    enabled: Boolean(restaurantId),
   });
   const [fav, setFav] = useState(false);
   const [following, setFollowing] = useState(false);
@@ -59,6 +87,34 @@ export default function RestaurantDetailScreen() {
   const [updateMenuInputVisible, setUpdateMenuInputVisible] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
+  
+  const [userClaims, setUserClaims] = useState<
+    { restaurant_id: string; status: string; reviewed_at?: string | null }[]
+  >([]);
+  const [claimNeedsStoreReverify, setClaimNeedsStoreReverify] = useState(false);
+  const [products, setProducts] = useState<Subscription[]>([]);
+  const [isAdminSubmitter, setIsAdminSubmitter] = useState(false);
+  const [restaurantCreatorIsAdmin, setRestaurantCreatorIsAdmin] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  const [venueCategorySaving, setVenueCategorySaving] = useState(false);
+
+  /** Bu restoran için sunucuda zaten pending talep varsa ödeme atlanır (aynı talep için tekrar gönderim). Başka restoran = her seferinde Store akışı. */
+  const hasPendingClaimForThisRestaurant = useMemo(
+    () => userClaims.some((c) => c.restaurant_id === restaurantId && c.status === 'pending'),
+    [userClaims, restaurantId],
+  );
+
+  const hasRejectedOtherRestaurantThisMonthUtc = useMemo(() => {
+    const start = new Date();
+    start.setUTCDate(1);
+    start.setUTCHours(0, 0, 0, 0);
+    return userClaims.some((c) => {
+      if (c.status !== 'rejected' || c.restaurant_id === restaurantId) return false;
+      const ra = c.reviewed_at;
+      if (!ra) return false;
+      return new Date(ra) >= start;
+    });
+  }, [userClaims, restaurantId]);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const updateSectionY = useRef(0);
@@ -68,12 +124,102 @@ export default function RestaurantDetailScreen() {
     logRestaurantView(restaurantId);
   }, [restaurantId]);
 
+  useFocusEffect(
+    useCallback(() => {
+      void queryClient.invalidateQueries({ queryKey: ['menuEntries', restaurantId] });
+      void queryClient.invalidateQueries({ queryKey: ['pendingMenuApproval', restaurantId] });
+      if (!user) return;
+      void getOwnerClaimStatuses().then(setUserClaims);
+      void fetchClaimSubmissionGate().then((g) => setClaimNeedsStoreReverify(g.needsReverify));
+    }, [user, restaurantId, queryClient]),
+  );
+
   useEffect(() => {
     if (!user) return;
     isFavorite(user.id, restaurantId).then(setFav);
     isFollowing(user.id, restaurantId).then(setFollowing);
     getUserVote(user.id, restaurantId).then(setMyVote);
+
+    fetchProducts().then(setProducts);
   }, [user, restaurantId]);
+
+  // Modal açılınca StoreKit ilk yüklemede boş dönebileceği için tekrar dene (ödeme gerekiyorsa).
+  useEffect(() => {
+    if (!claimInfoVisible || !user || hasPendingClaimForThisRestaurant) return;
+    let cancelled = false;
+    fetchProducts().then((list) => {
+      if (!cancelled && list.length > 0) setProducts(list);
+    });
+    return () => { cancelled = true; };
+  }, [claimInfoVisible, user, hasPendingClaimForThisRestaurant]);
+
+  useEffect(() => {
+    const submitterId = menus[0]?.submitted_by;
+    if (!submitterId) {
+      setIsAdminSubmitter(false);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('user_profiles')
+      .select('is_admin')
+      .eq('id', submitterId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setIsAdminSubmitter(data?.is_admin === true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [menus[0]?.submitted_by]);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .rpc('restaurant_creator_is_admin', { p_restaurant_id: restaurantId })
+      .then(({ data, error }) => {
+        if (!cancelled) setRestaurantCreatorIsAdmin(!error && data === true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setIsAdminUser(false);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('user_profiles')
+      .select('is_admin')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setIsAdminUser(data?.is_admin === true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const handleAdminVenueCategory = useCallback(
+    async (slug: string) => {
+      if (!user || venueCategorySaving) return;
+      setVenueCategorySaving(true);
+      try {
+        await adminSetRestaurantVenueCategory(restaurantId, slug);
+        await queryClient.invalidateQueries({ queryKey: ['restaurant', restaurantId] });
+        Alert.alert('', t('restaurant.adminVenueCategorySaved'));
+      } catch (e) {
+        Alert.alert(t('errors.generic'), (e as Error).message);
+      } finally {
+        setVenueCategorySaving(false);
+      }
+    },
+    [user, venueCategorySaving, restaurantId, queryClient, t],
+  );
 
   const handleFav = useCallback(async () => {
     if (!user) return;
@@ -111,8 +257,19 @@ export default function RestaurantDetailScreen() {
       Alert.alert(t('claim.loginRequired'));
       return;
     }
+    const hasOtherActiveClaim = userClaims.some(
+      (c) => c.restaurant_id !== restaurantId && (c.status === 'pending' || c.status === 'approved'),
+    );
+    if (hasOtherActiveClaim) {
+      Alert.alert(t('claim.oneBusinessOnlyTitle'), t('claim.oneBusinessOnlyBody'));
+      return;
+    }
+    if (hasRejectedOtherRestaurantThisMonthUtc) {
+      Alert.alert(t('claim.monthlyRetryTitle'), t('claim.monthlyRetryBody'));
+      return;
+    }
     setClaimInfoVisible(true);
-  }, [user, t]);
+  }, [user, t, userClaims, restaurantId, hasRejectedOtherRestaurantThisMonthUtc]);
 
   const handleMenuInputFocus = useCallback(() => {
     setTimeout(() => {
@@ -144,6 +301,7 @@ export default function RestaurantDetailScreen() {
       setUpdateMenuUrl('');
       setUpdateMenuInputVisible(false);
       queryClient.invalidateQueries({ queryKey: ['menuEntries', restaurantId] });
+      queryClient.invalidateQueries({ queryKey: ['pendingMenuApproval', restaurantId] });
     } catch (err) {
       const msg = (err as Error).message;
       const isSessionExpired = msg.includes('Oturumunuz sona ermiş') || msg.includes('session has expired');
@@ -160,6 +318,7 @@ export default function RestaurantDetailScreen() {
             setUpdateMenuUrl('');
             setUpdateMenuInputVisible(false);
             queryClient.invalidateQueries({ queryKey: ['menuEntries', restaurantId] });
+            queryClient.invalidateQueries({ queryKey: ['pendingMenuApproval', restaurantId] });
             return; // success on retry
           }
         } catch {
@@ -167,7 +326,7 @@ export default function RestaurantDetailScreen() {
         }
         Alert.alert(
           t('errors.generic'),
-          msg, // SHOW THE RAW ERROR SO WE CAN SEE DEBUG INFO
+          t('auth.sessionExpired') ?? 'Oturumunuz sona ermiş. Lütfen çıkış yapıp tekrar giriş yapın.',
           [
             { text: t('common.ok'), style: 'cancel' },
             { text: t('common.signOut'), onPress: () => signOut() },
@@ -203,12 +362,21 @@ export default function RestaurantDetailScreen() {
             try {
               const result = await submitReport(menuId, 'other');
               if (result.status === 'already_reported') {
-                Alert.alert(t('report.alreadyReported'));
+                Alert.alert(t('report.alreadyReportedTitle'), t('report.alreadyReported'), [
+                  { text: t('common.ok') },
+                ]);
               } else {
-                Alert.alert(t('report.success'));
+                Alert.alert(t('report.successTitle'), t('report.success'), [{ text: t('common.ok') }]);
               }
             } catch (err) {
-              Alert.alert(t('errors.generic'), (err as Error).message);
+              const msg = (err as Error).message || '';
+              const isAuth =
+                /401|oturum|giriş|unauthor|session|sign in/i.test(msg);
+              Alert.alert(
+                isAuth ? t('report.loginRequired') : t('errors.generic'),
+                isAuth ? t('auth.sessionExpired') : msg,
+                [{ text: t('common.ok') }],
+              );
             } finally {
               setReportLoading(false);
             }
@@ -218,12 +386,128 @@ export default function RestaurantDetailScreen() {
     );
   }, [user, menus, t]);
 
+  const handleBlockUserMenu = useCallback(() => {
+    if (!user) {
+      Alert.alert(t('report.loginRequired'));
+      return;
+    }
+    if (isAdminSubmitter || restaurantCreatorIsAdmin) {
+      return;
+    }
+    const currentMenu = menus[0];
+    if (!currentMenu?.submitted_by) return;
+
+    Alert.alert(
+      t('report.blockConfirmTitle', 'Kullanıcıyı Engelle'),
+      t('report.blockConfirmMessage', 'Bu kullanıcının eklediği hiçbir menüyü bir daha görmeyeceksiniz. Onaylıyor musunuz?'),
+      [
+        { text: t('common.cancel', 'İptal'), style: 'cancel' },
+        {
+          text: t('report.blockUser', 'Engelle'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await blockUser(currentMenu.submitted_by!);
+              Alert.alert(t('common.success', 'Başarılı'), t('report.blockedSuccess', 'Kullanıcı engellendi.'));
+              queryClient.invalidateQueries({ queryKey: ['menuEntries', restaurantId] });
+              queryClient.invalidateQueries({ queryKey: ['pendingMenuApproval', restaurantId] });
+            } catch (err) {
+              Alert.alert(t('errors.generic'), (err as Error).message);
+            }
+          },
+        },
+      ]
+    );
+  }, [user, menus, restaurantId, queryClient, t, isAdminSubmitter, restaurantCreatorIsAdmin]);
+
   const handleClaimConfirm = async () => {
-    setClaimInfoVisible(false);
     if (!user) return;
+
+    const hasOtherActiveClaim = userClaims.some(
+      (c) => c.restaurant_id !== restaurantId && (c.status === 'pending' || c.status === 'approved'),
+    );
+    if (hasOtherActiveClaim) {
+      Alert.alert(t('claim.oneBusinessOnlyTitle'), t('claim.oneBusinessOnlyBody'));
+      return;
+    }
+    if (hasRejectedOtherRestaurantThisMonthUtc) {
+      Alert.alert(t('claim.monthlyRetryTitle'), t('claim.monthlyRetryBody'));
+      return;
+    }
+
+    // Bu restoranda zaten pending talep varsa ödeme atlanır.
+    // Reddedilmiş talep sonrası claim_needs_store_reverify: abonelikle sessiz geçiş yapılamaz; mağaza akışı + ack gerekir.
+    let userHasEntitlement = hasPendingClaimForThisRestaurant;
+    const allowSubscriptionBypass = !claimNeedsStoreReverify;
+
+    if (!userHasEntitlement && allowSubscriptionBypass) {
+      try {
+        if (await checkProStatus()) userHasEntitlement = true;
+      } catch {
+        /* mağaza yanıt vermezse satın alma akışına düş */
+      }
+    }
+
+    if (!userHasEntitlement) {
+      let activeProducts = products;
+      if (activeProducts.length === 0) {
+        setClaimLoading(true);
+        try {
+          activeProducts = await fetchProducts();
+          if (activeProducts.length > 0) {
+            setProducts(activeProducts);
+          }
+        } catch (err) {
+          console.warn('Refetch failed', err);
+        }
+        setClaimLoading(false);
+      }
+
+      if (activeProducts.length === 0) {
+        Alert.alert(
+          t('errors.generic', 'Bir hata oluştu'),
+          t('claim.storeLoadErrorDetail', { productId: OWNER_SUBSCRIPTION_PRODUCT_ID }),
+        );
+        return;
+      }
+      
+      setClaimLoading(true);
+      try {
+        const purchased = await purchaseProduct(activeProducts[0]);
+        if (!purchased) {
+          setClaimLoading(false);
+          return;
+        }
+        if (claimNeedsStoreReverify) {
+          try {
+            await ackClaimStorePurchase();
+            setClaimNeedsStoreReverify(false);
+          } catch (ackErr) {
+            setClaimLoading(false);
+            Alert.alert(t('errors.generic'), ackErr instanceof Error ? ackErr.message : t('errors.generic'));
+            return;
+          }
+        }
+        userHasEntitlement = true;
+      } catch (err: unknown) {
+        setClaimLoading(false);
+        const code = (err as { code?: string })?.code;
+        if (code === 'E_USER_CANCELLED') return;
+        Alert.alert(
+          t('errors.generic'),
+          err instanceof Error ? err.message : t('claim.paymentFailed'),
+        );
+        return;
+      }
+    }
+    
+    // Satın alma başarılı olduysa veya zaten pro yetkisi varsa işlemi ulaştır
     setClaimLoading(true);
     try {
-      const result = await submitRestaurantClaim(restaurantId);
+      const result = await submitRestaurantClaim(restaurantId, 'store_subscription');
+      void getOwnerClaimStatuses().then(setUserClaims);
+      void fetchClaimSubmissionGate().then((g) => setClaimNeedsStoreReverify(g.needsReverify));
+      setClaimInfoVisible(false);
       if (result.status === 'pending') {
         Alert.alert(t('claim.submitted'), t('claim.submittedMessage'));
       } else {
@@ -231,8 +515,18 @@ export default function RestaurantDetailScreen() {
       }
     } catch (err) {
       const msg = (err as Error)?.message ?? '';
-      if (msg === 'restaurant already claimed') {
+      if (msg === 'restaurant already claimed' || msg === 'already_claimed') {
+        setClaimInfoVisible(false);
         Alert.alert(t('claim.alreadyClaimed'), t('claim.alreadyClaimedMessage'));
+      } else if (msg === 'user_limit_reached') {
+        setClaimInfoVisible(false);
+        Alert.alert(t('claim.oneBusinessOnlyTitle'), t('claim.oneBusinessOnlyBody'));
+      } else if (msg === 'claim_monthly_retry_blocked') {
+        setClaimInfoVisible(false);
+        Alert.alert(t('claim.monthlyRetryTitle'), t('claim.monthlyRetryBody'));
+      } else if (msg === 'claim_requires_fresh_store') {
+        setClaimInfoVisible(false);
+        Alert.alert(t('errors.generic', 'Hata'), t('claim.requiresFreshStore'));
       } else {
         Alert.alert(t('errors.generic'), msg || t('errors.generic'));
       }
@@ -362,6 +656,10 @@ export default function RestaurantDetailScreen() {
           <ExternalLink size={20} color="#fff" />
           <Text style={styles.menuBtnText}>{t('restaurant.openMenu')}</Text>
         </TouchableOpacity>
+      ) : hasPendingMenuApproval ? (
+        <View style={styles.noMenu}>
+          <Text style={styles.noMenuText}>{t('restaurant.menuPendingAdminApproval')}</Text>
+        </View>
       ) : (
         <View style={styles.noMenu}>
           <Text style={styles.noMenuText}>{t('restaurant.noMenu')}</Text>
@@ -416,61 +714,80 @@ export default function RestaurantDetailScreen() {
               <Text style={styles.updateMenuBtnText}>{t('restaurant.updateMenu')}</Text>
             </TouchableOpacity>
           ) : (
-            <View style={styles.updateRow}>
-              <TextInput
-                style={[styles.updateInput, { flex: 1 }]}
-                placeholder={t('addMenu.urlPlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                value={updateMenuUrl}
-                onChangeText={setUpdateMenuUrl}
-                keyboardType="url"
-                autoCapitalize="none"
-                autoCorrect={false}
-                spellCheck={false}
-                onFocus={handleMenuInputFocus}
-              />
-              <TouchableOpacity
-                style={[styles.qrBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={() => setQrScannerVisible(true)}
-                accessibilityLabel={t('addMenu.scanQR')}
-                accessibilityRole="button"
-              >
-                <Camera size={20} color={colors.accent} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.updateBtn,
-                  (!updateMenuUrl.trim() || updateSubmitting) && { opacity: 0.5 },
-                ]}
-                onPress={handleUpdateMenu}
-                disabled={!updateMenuUrl.trim() || updateSubmitting}
-              >
-                {updateSubmitting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <RefreshCw size={14} color="#fff" />
-                    <Text style={styles.updateBtnText}>{t('addMenu.submit')}</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+            <View>
+              <View style={styles.updateRow}>
+                <TextInput
+                  style={[styles.updateInput, { flex: 1 }]}
+                  placeholder={t('addMenu.urlPlaceholder')}
+                  placeholderTextColor={colors.textSecondary}
+                  value={updateMenuUrl}
+                  onChangeText={setUpdateMenuUrl}
+                  keyboardType="url"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  onFocus={handleMenuInputFocus}
+                />
+                <TouchableOpacity
+                  style={[styles.qrBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  onPress={() => setQrScannerVisible(true)}
+                  accessibilityLabel={t('addMenu.scanQR')}
+                  accessibilityRole="button"
+                >
+                  <Camera size={20} color={colors.accent} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.updateBtn,
+                    (!updateMenuUrl.trim() || updateSubmitting) && { opacity: 0.5 },
+                  ]}
+                  onPress={handleUpdateMenu}
+                  disabled={!updateMenuUrl.trim() || updateSubmitting}
+                >
+                  {updateSubmitting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <RefreshCw size={14} color="#fff" />
+                      <Text style={styles.updateBtnText}>{t('addMenu.submit')}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+              <Text style={{ fontSize: 13, color: colors.error, marginTop: 12, lineHeight: 18, paddingHorizontal: 4 }}>
+                {t('restaurant.updateMenuWarning')}
+              </Text>
             </View>
           )}
           {currentMenu && (
-            <TouchableOpacity
-              style={styles.reportBtn}
-              onPress={handleReportMenu}
-              disabled={reportLoading}
-            >
-              {reportLoading ? (
-                <ActivityIndicator size="small" color={colors.error} />
-              ) : (
-                <>
-                  <Flag size={14} color={colors.error} />
-                  <Text style={styles.reportText}>{t('restaurant.reportMenu')}</Text>
-                </>
+            <View style={styles.reportRow}>
+              <TouchableOpacity
+                style={styles.reportBtn}
+                onPress={handleReportMenu}
+                disabled={reportLoading}
+              >
+                {reportLoading ? (
+                  <ActivityIndicator size="small" color={colors.error} />
+                ) : (
+                  <>
+                    <Flag size={14} color={colors.error} />
+                    <Text style={styles.reportText}>{t('restaurant.reportMenu')}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              {currentMenu.submitted_by &&
+                currentMenu.submitted_by !== user?.id &&
+                !isAdminSubmitter &&
+                !restaurantCreatorIsAdmin && (
+                <TouchableOpacity
+                  style={styles.reportBtn}
+                  onPress={handleBlockUserMenu}
+                >
+                  <UserMinus size={14} color={colors.error} />
+                  <Text style={styles.reportText}>{t('report.blockUser', 'Kullanıcıyı Engelle')}</Text>
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
+            </View>
           )}
           <TouchableOpacity
             style={[styles.claimBtn, { borderColor: colors.border }]}
@@ -481,6 +798,52 @@ export default function RestaurantDetailScreen() {
         </View>
       )}
 
+      {isAdminUser && restaurant ? (
+        <View style={[styles.section, styles.adminVenueSection, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Shield size={18} color={colors.accent} />
+            <Text style={styles.sectionTitle}>{t('restaurant.adminVenueCategory')}</Text>
+          </View>
+          <Text style={[styles.adminVenueHint, { color: colors.textSecondary }]}>{t('restaurant.adminVenueCategoryHint')}</Text>
+          <View style={styles.adminVenueChipWrap}>
+            {ADMIN_VENUE_CATEGORIES.map((cat) => {
+              const current = appSlugFromStoredCuisine(restaurant.cuisine_primary);
+              const active = current === cat.slug;
+              return (
+                <TouchableOpacity
+                  key={cat.slug}
+                  style={[
+                    styles.adminVenueChip,
+                    { borderColor: colors.border, backgroundColor: active ? colors.accent : colors.background },
+                    active && { borderColor: colors.accent },
+                    venueCategorySaving && { opacity: 0.6 },
+                  ]}
+                  disabled={venueCategorySaving}
+                  onPress={() => {
+                    if (active) return;
+                    handleAdminVenueCategory(cat.slug);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.adminVenueChipText,
+                      { color: colors.text },
+                      active && { color: '#fff', fontWeight: '600' },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {cat.labelTr}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {venueCategorySaving ? (
+            <ActivityIndicator style={{ marginTop: 12 }} color={colors.accent} />
+          ) : null}
+        </View>
+      ) : null}
+
       <QRScannerModal
         visible={qrScannerVisible}
         onClose={() => setQrScannerVisible(false)}
@@ -490,7 +853,7 @@ export default function RestaurantDetailScreen() {
 
     <SafeBannerAd />
 
-    {/* Claim modal - sahiplik talebi */}
+    {/* Premium Claim modal - sahiplik talebi */}
     <Modal visible={claimInfoVisible} animationType="slide" transparent>
       <TouchableOpacity
         style={styles.modalBackdrop}
@@ -500,30 +863,109 @@ export default function RestaurantDetailScreen() {
         <TouchableOpacity
           activeOpacity={1}
           onPress={(e) => e.stopPropagation()}
-          style={[styles.claimModalContent, { backgroundColor: colors.surface }]}
+          style={styles.premiumModalContent}
         >
-          <Text style={[styles.claimModalTitle, { color: colors.text }]}>{t('claim.infoTitle')}</Text>
-          <ScrollView style={{ maxHeight: 280, marginBottom: 16 }} showsVerticalScrollIndicator={false}>
-            <Text style={[styles.claimModalBody, { color: colors.textSecondary }]}>
-              {t('restaurant.updateMenuWarning')}
-              {'\n\n'}
+          {/* Badge Icon */}
+          <View style={styles.premiumBadgeContainer}>
+            <BadgeCheck size={40} color="#3B82F6" />
+          </View>
+          
+          <Text style={styles.premiumModalTitle}>{t('claim.infoTitle')}</Text>
+          
+          <ScrollView style={{ maxHeight: 300, marginBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.premiumFeaturesList}>
+              <View style={styles.premiumFeatureRow}>
+                <BadgeCheck size={20} color={colors.accent} />
+                <Text style={styles.premiumFeatureText}>Resmi mavi tik & doğrulanmış rozet</Text>
+              </View>
+              <View style={styles.premiumFeatureRow}>
+                <RefreshCw size={20} color={colors.accent} />
+                <Text style={styles.premiumFeatureText}>Sınırsız menü ve kapak fotoğrafı güncelleme</Text>
+              </View>
+              <View style={styles.premiumFeatureRow}>
+                <Star size={20} color={colors.accent} />
+                <Text style={styles.premiumFeatureText}>{t('claim.featurePriceLine')}</Text>
+              </View>
+            </View>
+
+            <Text style={styles.premiumModalBody}>
               {t('claim.infoBody')}
             </Text>
+            <Text style={[styles.premiumModalBody, { marginTop: 12, fontSize: 12, color: colors.textSecondary }]}>
+              {t('claim.subscriptionRenewalNote')}
+            </Text>
           </ScrollView>
+
+          {hasPendingClaimForThisRestaurant && (
+            <View
+              style={{
+                marginBottom: 16,
+                padding: 12,
+                borderRadius: 10,
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.accent,
+              }}
+            >
+              <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600', marginBottom: 4 }}>
+                {t('claim.pendingNoticeTitle')}
+              </Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 18 }}>
+                {t('claim.pendingNoticeBody')}
+              </Text>
+            </View>
+          )}
+
+          {!hasPendingClaimForThisRestaurant && products.length === 0 && (
+            <View style={{ marginBottom: 16, alignItems: 'center', paddingHorizontal: 20 }}>
+              <Text style={{ color: colors.error, textAlign: 'center', fontSize: 13, marginBottom: 8 }}>
+                {t('claim.storeLoadError', { productId: OWNER_SUBSCRIPTION_PRODUCT_ID })}
+              </Text>
+              <TouchableOpacity onPress={() => fetchProducts().then(setProducts)} style={{ paddingVertical: 4 }}>
+                <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 14 }}>{t('claim.retryLoad')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <TouchableOpacity
-            style={[styles.claimProceedBtn, { backgroundColor: colors.accent }]}
+            style={[
+              styles.premiumProceedBtn,
+              (!hasPendingClaimForThisRestaurant && products.length === 0) && {
+                opacity: 0.5,
+                backgroundColor: colors.border,
+              },
+            ]}
             onPress={handleClaimConfirm}
-            disabled={claimLoading}
+            disabled={claimLoading || (!hasPendingClaimForThisRestaurant && products.length === 0)}
           >
             {claimLoading ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.claimProceedText}>{t('claim.infoProceed')}</Text>
+              <Text style={styles.premiumProceedText}>
+                {hasPendingClaimForThisRestaurant ? t('claim.submitWithSub') : t('claim.startSub')}
+              </Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.claimCancelBtn} onPress={() => setClaimInfoVisible(false)}>
             <Text style={[styles.claimCancelText, { color: colors.textSecondary }]}>{t('claim.infoCancel')}</Text>
           </TouchableOpacity>
+
+          {!hasPendingClaimForThisRestaurant && (
+            <View style={styles.legalFooter}>
+              <Text style={styles.legalText}>
+                Ödeme, onay anında Apple ID işleminizden tahsil edilir. Abonelik, geçerli dönemin bitiminden en az 24 saat önce iptal edilmediği sürece otomatik olarak yenilenir. Yenileme tutarı, geçerli dönemin bitimine 24 saat kala hesabınızdan kesilir. Satın alımdan sonra App Store'da "Abonelikler" alanından yönetebilir ve iptal edebilirsiniz.
+              </Text>
+              <View style={styles.legalLinks}>
+                <TouchableOpacity onPress={() => openUrl('https://musamecit.github.io/MenuBank/privacy.html')}>
+                  <Text style={styles.legalLinkText}>Gizlilik Politikası</Text>
+                </TouchableOpacity>
+                <Text style={styles.legalDivider}>•</Text>
+                <TouchableOpacity onPress={() => openUrl('https://musamecit.github.io/MenuBank/terms.html')}>
+                  <Text style={styles.legalLinkText}>Kullanım Koşulları</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
@@ -573,7 +1015,8 @@ function getStyles(colors: ColorSet) {
     voteBtnActive: { borderColor: colors.accent, backgroundColor: colors.accentMuted },
     voteBtnText: { fontSize: 14, color: colors.text },
     voteBtnTextActive: { color: colors.accent, fontWeight: '600' },
-    reportBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 24, paddingHorizontal: 16 },
+    reportRow: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', marginTop: 24, paddingHorizontal: 16, gap: 24 },
+    reportBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     reportText: { fontSize: 13, color: colors.error },
     claimBtn: { marginTop: 16, marginHorizontal: 16, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
     claimText: { fontSize: 14, color: colors.accent, fontWeight: '600' },
@@ -581,7 +1024,7 @@ function getStyles(colors: ColorSet) {
     claimModalContent: { marginHorizontal: 16, marginBottom: 40, padding: 20, borderRadius: 16, maxHeight: '80%' },
     claimModalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
     claimModalBody: { fontSize: 14, lineHeight: 22, marginBottom: 20 },
-    claimCancelBtn: { marginTop: 8, alignItems: 'center' },
+    claimCancelBtn: { marginTop: 12, alignItems: 'center', paddingVertical: 10 },
     claimInfo: { marginHorizontal: 16, marginTop: 12, padding: 16, backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
     claimInfoTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 8 },
     claimInfoBody: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
@@ -613,5 +1056,55 @@ function getStyles(colors: ColorSet) {
       backgroundColor: colors.accent, borderRadius: 10,
     },
     updateBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+    
+    // Premium Modal Styles
+    premiumModalContent: {
+      marginHorizontal: 20, marginBottom: 40, padding: 24, borderRadius: 24, 
+      backgroundColor: colors.surface,
+      shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 10,
+    },
+    premiumBadgeContainer: {
+      alignSelf: 'center', backgroundColor: colors.accentMuted, padding: 16, borderRadius: 50, marginBottom: 16,
+    },
+    premiumModalTitle: { fontSize: 22, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 8 },
+    premiumModalSubtitle: { 
+      fontSize: 15, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 20,
+    },
+    premiumFeaturesList: {
+      backgroundColor: colors.background, borderRadius: 16, padding: 16, gap: 14, marginBottom: 20,
+      borderWidth: 1, borderColor: colors.border
+    },
+    premiumFeatureRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    premiumFeatureText: { fontSize: 14, color: colors.text, flex: 1, fontWeight: '500', lineHeight: 20 },
+    premiumModalBody: { fontSize: 13, color: colors.textSecondary, lineHeight: 20, textAlign: 'center' },
+    premiumProceedBtn: { 
+      backgroundColor: colors.accent, borderRadius: 16, paddingVertical: 16, alignItems: 'center', 
+      shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 5 
+    },
+    premiumProceedText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+    legalFooter: { marginTop: 12, alignItems: 'center', paddingHorizontal: 4 },
+    legalText: { fontSize: 10, color: colors.textSecondary, textAlign: 'center', lineHeight: 14, marginBottom: 8 },
+    legalLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+    legalLinkText: { fontSize: 11, color: colors.accent, fontWeight: '500', textDecorationLine: 'underline' },
+    legalDivider: { fontSize: 11, color: colors.textSecondary },
+    adminVenueSection: {
+      marginHorizontal: 16,
+      marginTop: 24,
+      marginBottom: 8,
+      padding: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+    },
+    adminVenueHint: { fontSize: 12, lineHeight: 17, marginBottom: 12 },
+    adminVenueChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    adminVenueChip: {
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: 18,
+      borderWidth: 1,
+      backgroundColor: 'transparent',
+      maxWidth: '100%',
+    },
+    adminVenueChipText: { fontSize: 13 },
   });
 }

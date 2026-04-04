@@ -36,6 +36,7 @@ export interface MenuEntry {
   verification_status: string;
   submitted_at: string;
   is_hidden: boolean;
+  submitted_by?: string;
 }
 
 export interface RestaurantWithMenu extends Restaurant {
@@ -93,25 +94,132 @@ export async function fetchRestaurantsByCity(
   })) as RestaurantWithMenu[];
 }
 
+function isRestaurantDetailVisible(status: unknown): boolean {
+  return String(status ?? '').trim().toLowerCase() !== 'disabled';
+}
+
+/** PostgREST: SETOF → [satır]; json bazen string */
+function rowFromRpcRestaurant(data: unknown): Restaurant | null {
+  if (data == null) return null;
+  let v: unknown = data;
+  if (typeof v === 'string') {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(v)) {
+    v = v[0];
+  }
+  if (v == null || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  if (o.id == null) return null;
+  return o as unknown as Restaurant;
+}
+
+function rowsFromRpcMenus(data: unknown): MenuEntry[] {
+  if (data == null) return [];
+  let v: unknown = data;
+  if (typeof v === 'string') {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      return [];
+    }
+  }
+  const arr = Array.isArray(v) ? v : [v];
+  return arr.filter((x) => x != null && typeof x === 'object' && (x as Record<string, unknown>).id != null) as MenuEntry[];
+}
+
+async function fetchRestaurantViaInvoke(id: string): Promise<Restaurant | null> {
+  const trimmed = id.trim();
+  if (!trimmed) return null;
+  const { data, error } = await supabase.functions.invoke('restaurant-public', {
+    body: { id: trimmed },
+  });
+  if (error != null || data == null || typeof data !== 'object') return null;
+  const row = data as Record<string, unknown>;
+  if (row.error != null || row.id == null) return null;
+  return data as unknown as Restaurant;
+}
+
 export async function fetchRestaurant(id: string): Promise<Restaurant | null> {
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('get_restaurant_for_client', {
+    p_id: id.trim(),
+  });
+  if (!rpcErr) {
+    const fromRpc = rowFromRpcRestaurant(rpcData);
+    if (fromRpc) return fromRpc;
+  }
+
+  const fromInvoke = await fetchRestaurantViaInvoke(id);
+  if (fromInvoke) return fromInvoke;
+
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(
+      `${SUPABASE_URL}/functions/v1/explore?action=restaurant&id=${encodeURIComponent(id.trim())}`,
+      { headers },
+    );
+    if (res.ok) {
+      const json = (await res.json()) as Record<string, unknown>;
+      if (json.error == null && json.id != null) {
+        return json as unknown as Restaurant;
+      }
+    }
+  } catch {
+    /* ağ */
+  }
+
   const { data, error } = await supabase
     .from('restaurants')
     .select('*')
-    .eq('id', id)
-    .eq('status', 'active')
+    .eq('id', id.trim())
     .is('deleted_at', null)
     .maybeSingle();
-  if (error || !data) return null;
-  return data as Restaurant;
+  if (!error && data && isRestaurantDetailVisible(data.status)) {
+    return data as Restaurant;
+  }
+  return null;
+}
+
+async function fetchMenuEntriesViaInvoke(restaurantId: string): Promise<MenuEntry[] | null> {
+  const rid = restaurantId.trim();
+  if (!rid) return null;
+  const { data, error } = await supabase.functions.invoke('menu-entries-public', {
+    body: { restaurant_id: rid },
+  });
+  if (error != null || !Array.isArray(data)) return null;
+  return data as MenuEntry[];
+}
+
+/** Onaylı menü yokken detayda "admin onayında" göstermek için (RLS bypass, SECURITY DEFINER RPC). */
+export async function restaurantHasPendingMenuForClient(restaurantId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('restaurant_has_pending_menu_for_client', {
+    p_restaurant_id: restaurantId.trim(),
+  });
+  if (error) return false;
+  return Boolean(data);
 }
 
 export async function fetchMenuEntries(restaurantId: string): Promise<MenuEntry[]> {
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('get_menu_entries_for_client', {
+    p_restaurant_id: restaurantId.trim(),
+  });
+  if (!rpcErr && rpcData != null) {
+    return rowsFromRpcMenus(rpcData);
+  }
+
+  const fromInvoke = await fetchMenuEntriesViaInvoke(restaurantId);
+  if (fromInvoke != null) return fromInvoke;
+
   const { data } = await supabase
     .from('menu_entries')
-    .select('id, url, verification_status, submitted_at, is_hidden')
-    .eq('restaurant_id', restaurantId)
+    .select('id, url, verification_status, submitted_at, is_hidden, submitted_by')
+    .eq('restaurant_id', restaurantId.trim())
     .eq('verification_status', 'approved')
-    .eq('is_hidden', false)
+    .or('is_hidden.eq.false,is_hidden.is.null')
     .is('deleted_at', null)
     .order('submitted_at', { ascending: false });
   return (data ?? []) as MenuEntry[];
@@ -120,12 +228,12 @@ export async function fetchMenuEntries(restaurantId: string): Promise<MenuEntry[
 export async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  const headers: Record<string, string> = {
+  const bearer = token ?? SUPABASE_ANON_KEY;
+  return {
     'Content-Type': 'application/json',
     apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${bearer}`,
   };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  return headers;
 }
 
 export async function createRestaurant(body: {

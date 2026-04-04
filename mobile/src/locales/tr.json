@@ -36,9 +36,22 @@
     "searchPlaceholder": "Restoran, şehir, mutfak...",
     "filterApply": "Uygula",
     "filterReset": "Sıfırla",
+    "filterClearAll": "Filtreleri Temizle",
     "distance1km": "1 km",
     "distance3km": "3 km",
-    "distance5km": "5 km"
+    "distance5km": "5 km",
+    "distance10km": "10 km",
+    "categories": "Kategoriler",
+    "searchNearMeInLists": "Yakınımda ara →",
+    "curatedLists": "Özel Listeler",
+    "catRestaurant": "🍽 Restoranlar",
+    "catCafe": "☕ Kafeler",
+    "catBar": "🍺 Barlar",
+    "catMeyhane": "🥃 Meyhaneler",
+    "catFastfood": "🍔 Fast Food",
+    "catBistro": "🥗 Bistro & Lounge",
+    "catCoffee": "☕ Kahveciler",
+    "catBakery": "🥐 Tatlı & Fırın"
   },
   "search": {
     "placeholder": "Restoran ara...",
@@ -63,13 +76,17 @@
     "rating": "Puan",
     "noMenu": "Henüz menü eklenmemiş",
     "addFirstMenu": "İlk menüyü sen ekle!",
+    "menuPendingAdminApproval": "Menü admin onayında!",
     "distance": "{{distance}} km",
     "priceVote": "Fiyat Değerlendir",
     "priceCheap": "Ucuz",
     "priceAverage": "Ortalama",
     "priceExpensive": "Pahalı",
     "priceVoted": "Oyunuz kaydedildi",
-    "ownerCta": "Bu restoranın sahibi misin?"
+    "ownerCta": "Bu restoranın sahibi misin?",
+    "adminVenueCategory": "Kategori (yönetici)",
+    "adminVenueCategoryHint": "Keşfet listelerindeki kategori süzümü cuisine_primary ile eşleşir.",
+    "adminVenueCategorySaved": "Kategori güncellendi"
   },
   "addMenu": {
     "title": "Menü Ekle",
@@ -143,7 +160,8 @@
     "cancel": "Vazgeç",
     "confirm": "Onayla",
     "userId": "Kullanıcı ID",
-    "copied": "Kopyalandı!"
+    "copied": "Kopyalandı!",
+    "appleAccount": "Apple ile giriş"
   },
   "settings": {
     "title": "Ayarlar",
@@ -160,10 +178,14 @@
     "themeSystem": "Sistem",
     "dateFormat": "Tarih Formatı",
     "language": "Dil",
+    "chooseLanguage": "Dil seçin",
+    "menuBlockedWarning": "Hesabınız geçici olarak menü eklemekten engellendi.",
+    "blockedUsers": "Engellenen kullanıcılar",
     "privacy": "Gizlilik",
     "analyticsTracking": "Analitik ve İzleme",
     "privacyPolicy": "Gizlilik Politikası",
-    "termsOfService": "Kullanım Koşulları"
+    "termsOfService": "Kullanım Koşulları",
+    "account": "Hesap"
   },
   "auth": {
     "title": "Giriş Yap",
@@ -178,16 +200,30 @@
   "claim": {
     "ctaButton": "Bu işletme size mi ait?",
     "submitted": "Talep Gönderildi",
-    "submittedMessage": "Ödemeniz alındı ve sahiplik talebiniz incelemeye alındı. Google Haritalar'da kayıtlı iletişim bilgileri üzerinden sizinle iletişime geçilecektir.",
+    "submittedMessage": "Ödemeniz alındı, sahiplik talebiniz incelemeye alındı. İşletmenizin Google Haritalar'da yer alan iletişim bilgisi ile size ulaşıldıktan sonra restoran sahipliğiniz onaylanacaktır.",
     "alreadyClaimed": "Talep Mevcut",
     "alreadyClaimedMessage": "Bu işletme için zaten bir sahiplik talebi bulunmaktadır.",
     "infoTitle": "İşletme Sahipliği Talebi",
-    "infoBody": "İşletmenizi sahiplenerek menülerinizi yönetebilir, iletişim bilgilerinizi güncelleyebilir ve onaylı mavi tik rozeti alabilirsiniz.\n\n• Ücret: Aylık 9,99 USD (her restoran için ayrı)\n• Ödeme Apple üzerinden gerçekleştirilir\n• Abonelik her ay otomatik yenilenir\n\nDoğrulama süreci:\nGoogle Haritalar'da kayıtlı işletme bilgilerinden sizinle iletişime geçilecek ve sahiplik doğrulanacaktır.\n\n⚠️ Sahiplik onaylanmasa dahi ödeme iade edilmez. İptal: Ayarlar > Apple ID > Abonelikler.",
-    "infoProceed": "9,99 $ Öde ve Talep Gönder",
+    "infoBody": "İşletmenizi sahiplenerek menülerinizi yönetebilir, iletişim bilgilerinizi güncelleyebilir ve onaylı mavi tik rozeti alabilirsiniz.\n\n• Ücret: Aylık 49,99 USD (her restoran için ayrı)\n• Ödeme Apple üzerinden gerçekleştirilir\n• Abonelik her ay otomatik yenilenir\n\nDoğrulama süreci:\nGoogle Haritalar'da kayıtlı işletme bilgilerinden sizinle iletişime geçilecek ve sahiplik doğrulanacaktır.\n\n⚠️ Sahiplik onaylanmasa dahi ödeme iade edilmez. İptal: Ayarlar > Apple ID > Abonelikler.",
+    "infoProceed": "49,99 $ Öde ve Talep Gönder",
+    "featurePriceLine": "Aylık sadece $49.99 (İstediğiniz zaman iptal edebilirsiniz)",
+    "startSub": "Aboneliği Başlat ($49.99/ay)",
+    "submitWithSub": "Talebi Gönder (bu işletme için ödeme kayıtlı)",
+    "storeLoadError": "Abonelik ürünü yüklenemedi ({{productId}}). Lütfen internetinizi kontrol edin.",
+    "storeLoadErrorDetail": "{{productId}} mağazadan yüklenemedi. TestFlight kullanıyorsanız veya bağlantınız yavaşsa biraz bekleyip tekrar deneyin.",
+    "retryLoad": "Yeniden Dene",
     "infoCancel": "Vazgeç",
     "loginRequired": "Sahiplik talebi için giriş yapmalısınız.",
     "paymentFailed": "Ödeme tamamlanamadı. Talep gönderilmedi.",
-    "paymentSuccess": "Ödeme başarılı! Talebiniz gönderiliyor..."
+    "paymentSuccess": "Ödeme başarılı! Talebiniz gönderiliyor...",
+    "requiresFreshStore": "Önceki sahiplik talebiniz reddedildi. Yeni talep için mağazadan satın alma adımını baştan tamamlamanız gerekir (abonelik tek başına yeterli değildir).",
+    "oneBusinessOnlyTitle": "Tek işletme",
+    "oneBusinessOnlyBody": "Bir kullanıcı yalnız bir işletme sahibi olabilir!",
+    "monthlyRetryTitle": "Bu ay için talep sınırı",
+    "monthlyRetryBody": "Bu ay içinde başka bir işletme için talebiniz reddedildi. Aynı ay içinde farklı bir işletme talebi oluşturamazsınız; gelecek ay tekrar deneyebilir veya destek ile iletişime geçebilirsiniz.",
+    "pendingNoticeTitle": "Talebiniz inceleniyor",
+    "pendingNoticeBody": "Bu işletme için sahiplik talebiniz zaten gönderildi ve onay bekliyor. Ek ödeme adımı gerekmez; sonucu bildirim veya profilinizden takip edebilirsiniz.",
+    "subscriptionRenewalNote": "Not: Aboneliğin her ay Apple tarafından otomatik yenilenmesi, uygulamada ayrı bir “satın alma tamamlandı” adımı sayılmaz. Reddedilen talep sonrası istenen mağaza akışı, bu otomatik yenilemeyle kendiliğinden oluşmaz."
   },
   "report": {
     "title": "Menüyü Bildir",
@@ -198,11 +234,14 @@
     "other": "Diğer",
     "details": "Detay (isteğe bağlı)",
     "submit": "Bildir",
-    "success": "Bildiriminiz alındı",
-    "alreadyReported": "Bu menüyü daha önce bildirdiniz",
+    "successTitle": "Teşekkürler",
+    "success": "Bildiriminiz alındı. İnceleme için ekibimize iletildi.",
+    "alreadyReportedTitle": "Bilgi",
+    "alreadyReported": "Bu menüyü daha önce bildirdiniz.",
     "loginRequired": "Bildirim için giriş yapın",
     "confirmTitle": "Menüyü Bildir",
-    "confirmMessage": "Bu menüyü bildirmek istediğinize emin misiniz?"
+    "confirmMessage": "Bu menüyü bildirmek istediğinize emin misiniz?",
+    "blockUser": "Kullanıcıyı engelle"
   },
   "lists": {
     "myLists": "Listelerim",
@@ -216,14 +255,19 @@
     "addRestaurant": "Restoran Ekle",
     "removeRestaurant": "Restoranı Çıkar",
     "empty": "Bu liste boş",
-    "maxLists": "En fazla 10 liste oluşturabilirsiniz"
+    "maxLists": "En fazla 10 liste oluşturabilirsiniz",
+    "newListDefaultName": "Listem {{n}}"
   },
   "notifications": {
     "genericTitle": "Bildirim",
     "menuUpdateTitle": "Yeni menü eklendi",
+    "menuUpdateShort": "menü güncellendi.",
     "priceChangeTitle": "Fiyat güncellemesi",
     "genericBody": "Takip ettiğiniz restoranlar için güncellemeler.",
-    "empty": "Henüz bildiriminiz yok."
+    "empty": "Henüz bildiriminiz yok.",
+    "deleteTitle": "Bildirimi sil",
+    "deleteConfirm": "Bu bildirimi listeden kaldırmak istiyor musunuz?",
+    "deleteOne": "Bildirimi sil"
   },
   "errors": {
     "generic": "Bir hata oluştu",
@@ -246,6 +290,12 @@
     "title": "Yönetici Paneli",
     "pendingMenus": "Bekleyen menüler",
     "pendingMenusSub": "Bekleyen menü yok",
+    "pendingMenusHint": "Yalnızca yayında işletmelerin menü güncellemeleri",
+    "pendingEstablishments": "Onay bekleyen işletmeler",
+    "pendingEstablishmentsSub": "Yeni işletme yok",
+    "approveEstablishment": "İşletmeyi onayla",
+    "rejectEstablishment": "İşletmeyi reddet",
+    "rejectEstablishmentConfirm": "İşletme ve taslağı kalıcı silinecek. Emin misiniz?",
     "hiddenMenus": "Gizli menüler",
     "hiddenMenusSub": "Gizli menü yok",
     "restaurantsReview": "Restoranlar (inceleme / devre dışı)",
@@ -272,7 +322,10 @@
     "unbanUser": "Engeli Kaldır",
     "noPermission": "Bu sayfaya erişim yetkiniz yok",
     "disableRestaurant": "Restoranı devre dışı bırak",
-    "enableRestaurant": "Restoranı yeniden aktif et",
+    "enableRestaurant": "İncelemeye al",
+    "enableRestaurantSub": "Yayına alınmadan önce onay bekleyen işletmeler listesine gider",
+    "deleteRestaurant": "Kalıcı olarak sil",
+    "deleteRestaurantConfirm": "Bu restoranı kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.",
     "openMenu": "Menüyü Aç",
     "viewRestaurant": "Restoran Detayı"
   },
@@ -285,6 +338,7 @@
     "back": "Geri",
     "loading": "Yükleniyor...",
     "save": "Kaydet",
+    "warning": "Uyarı",
     "cancel": "Vazgeç",
     "delete": "Sil",
     "edit": "Düzenle",
@@ -295,6 +349,7 @@
     "ok": "Tamam",
     "seeAll": "Tümünü Gör",
     "retry": "Tekrar Dene",
+    "search": "Ara...",
     "share": "Paylaş",
     "signOut": "Çıkış yap"
   },

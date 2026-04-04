@@ -16,8 +16,10 @@ import { submitRestaurantWithMenu } from '../lib/submitRestaurantWithMenu';
 import { signOut } from '../lib/authUtils';
 import { supabase } from '../lib/supabase';
 import QRScannerModal from '../components/QRScannerModal';
+import SafeBannerAd, { BANNER_HEIGHT_TOTAL } from '../components/SafeBannerAd';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import type { ColorSet } from '../theme/colors';
+import { VENUE_CATEGORIES } from '../lib/venueCategories';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -28,21 +30,6 @@ interface PlaceResult {
 }
 
 type Step = 'search' | 'url';
-
-const CATEGORIES: { slug: string; label: string }[] = [
-  { slug: 'balikci', label: 'Balıkçı' },
-  { slug: 'bar', label: 'Bar' },
-  { slug: 'beach', label: 'Beach' },
-  { slug: 'burger', label: 'Burger' },
-  { slug: 'cafe', label: 'Cafe' },
-  { slug: 'meyhane', label: 'Meyhane' },
-  { slug: 'nargile', label: 'Nargile' },
-  { slug: 'pizza', label: 'Pizza' },
-  { slug: 'restaurant', label: 'Restaurant' },
-  { slug: 'street_food', label: 'Sokak Lezzetleri' },
-  { slug: 'dessert', label: 'Tatlı' },
-  { slug: 'other', label: 'Diğer' },
-];
 
 export default function AddMenuScreen() {
   const { t } = useTranslation();
@@ -181,7 +168,6 @@ export default function AddMenuScreen() {
                 city_name: parts[parts.length - 2] ?? parts[0] ?? '',
                 area_name: parts[0] ?? '',
                 formatted_address: selectedPlace.formattedAddress,
-                country_code: 'TR',
                 url: trimmed,
                 category_slug: selectedCategory!,
               });
@@ -207,7 +193,7 @@ export default function AddMenuScreen() {
         }
         Alert.alert(
           t('errors.generic'),
-          msg, // SHOW THE RAW ERROR SO WE CAN SEE DEBUG INFO
+          t('auth.sessionExpired') ?? 'Oturumunuz sona ermiş. Lütfen çıkış yapıp tekrar giriş yapın.',
           [
             { text: t('common.ok'), style: 'cancel' },
             { text: t('common.signOut'), onPress: () => signOut() },
@@ -227,16 +213,20 @@ export default function AddMenuScreen() {
 
   if (!user) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.loginText}>{t('addMenu.loginRequired')}</Text>
-        <TouchableOpacity style={styles.loginBtn} onPress={() => navigation.navigate('Auth')}>
-          <Text style={styles.loginBtnText}>{t('profile.login')}</Text>
-        </TouchableOpacity>
+      <View style={styles.outer}>
+        <View style={styles.centerContainer}>
+          <Text style={styles.loginText}>{t('addMenu.loginRequired')}</Text>
+          <TouchableOpacity style={styles.loginBtn} onPress={() => navigation.navigate('Auth')}>
+            <Text style={styles.loginBtnText}>{t('profile.login')}</Text>
+          </TouchableOpacity>
+        </View>
+        <SafeBannerAd />
       </View>
     );
   }
 
   return (
+    <View style={styles.outer}>
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
         <Text style={styles.title}>{t('addMenu.title')}</Text>
@@ -280,7 +270,7 @@ export default function AddMenuScreen() {
                 <Text style={styles.emptyText}>{t('addMenu.typeToSearch')}</Text>
               ) : null
             }
-            contentContainerStyle={{ paddingBottom: 40 }}
+            contentContainerStyle={{ paddingBottom: BANNER_HEIGHT_TOTAL + 24 }}
           />
         </View>
       ) : (
@@ -308,6 +298,9 @@ export default function AddMenuScreen() {
               <Camera size={24} color={colors.accent} />
             </TouchableOpacity>
           </View>
+          <Text style={{ fontSize: 13, color: colors.error, marginTop: 8, lineHeight: 18 }}>
+            {t('restaurant.updateMenuWarning')}
+          </Text>
           <QRScannerModal
             visible={qrScannerVisible}
             onClose={() => setQrScannerVisible(false)}
@@ -315,7 +308,7 @@ export default function AddMenuScreen() {
           />
           <Text style={[styles.urlLabel, { marginTop: 8 }]}>{t('addMenu.selectCategory')}</Text>
           <View style={styles.categoryRow}>
-            {CATEGORIES.map((cat) => {
+            {VENUE_CATEGORIES.map((cat) => {
               const isActive = selectedCategory === cat.slug;
               return (
                 <TouchableOpacity
@@ -324,7 +317,7 @@ export default function AddMenuScreen() {
                   onPress={() => setSelectedCategory(cat.slug)}
                 >
                   <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>
-                    {cat.label}
+                    {cat.labelTr}
                   </Text>
                 </TouchableOpacity>
               );
@@ -361,13 +354,16 @@ export default function AddMenuScreen() {
         </View>
       )}
     </KeyboardAvoidingView>
+    <SafeBannerAd />
+    </View>
   );
 }
 
 function getStyles(colors: ColorSet) {
   return StyleSheet.create({
+    outer: { flex: 1, backgroundColor: colors.background },
     container: { flex: 1, backgroundColor: colors.background },
-    centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, padding: 24 },
+    centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
     header: { paddingHorizontal: 16, paddingTop: 60, paddingBottom: 12, backgroundColor: colors.surface },
     title: { fontSize: 22, fontWeight: '700', color: colors.text },
     content: { flex: 1, padding: 16 },

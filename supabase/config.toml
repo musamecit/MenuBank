@@ -10,3 +10,13 @@ verify_jwt = false
 
 [functions.admin-actions]
 verify_jwt = false
+
+# Keşif: oturumsuz isteklerde Authorization olmadan 401 olabiliyor
+[functions.explore]
+verify_jwt = false
+
+[functions.restaurant-public]
+verify_jwt = false
+
+[functions.menu-entries-public]
+verify_jwt = false
