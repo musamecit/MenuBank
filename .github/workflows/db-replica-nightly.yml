@@ -45,9 +45,26 @@ jobs:
       - name: PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
 
+      # Hangi uçta hata olduğunu logda net görmek için (şifreler maskelenir)
+      - name: Kaynak DB bağlantı testi
+        env:
+          PGSSLMODE: require
+          SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
+        run: psql "$SOURCE_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT 1 AS source_ok;"
+
+      - name: Hedef DB bağlantı testi
+        env:
+          PGSSLMODE: require
+          TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
+        run: psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT 1 AS target_ok;"
+
       - name: Yedekle (prod salt okunur)
         env:
           PGSSLMODE: require
+          # Supabase + pg_dump: read_only oturumu bazen pg_dump'ı düşürür; CI'da kapalı
+          REPLICA_SOURCE_READ_ONLY_GUARD: "0"
+          # İlk kurulum / hedef temizse --clean gerekmez; DROP zinciri hata verirse 0 kalsın
+          REPLICA_SCHEMA_CLEAN: "0"
           SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
           TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
         run: bash scripts/replica-backup.sh
