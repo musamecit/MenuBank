@@ -23,7 +23,7 @@ import RestaurantCard from '../components/RestaurantCard';
 import { RestaurantSkeletonList } from '../components/RestaurantSkeleton';
 import SafeBannerAd, { BANNER_HEIGHT_TOTAL } from '../components/SafeBannerAd';
 import { fetchCountries, fetchCities, fetchAreas, type Country, type City, type Area } from '../lib/locations';
-import { VENUE_CATEGORIES } from '../lib/venueCategories';
+import { VENUE_CATEGORIES, VENUE_CATEGORY_CARD_COLORS } from '../lib/venueCategories';
 import { curatedListTitleField } from '../lib/languages';
 import { fetchUnreadNotificationCount } from '../lib/userNotifications';
 import type { RootStackParamList } from '../navigation/RootNavigator';
@@ -959,35 +959,31 @@ export default function ExploreScreen() {
               {location && (
                 <View>
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('explore.categories')}</Text>
-                  {(
-                    [
-                      { slug: 'restaurant', labelKey: 'explore.catRestaurant' as const, color: '#4CAF50' },
-                      { slug: 'cafe', labelKey: 'explore.catCafe' as const, color: '#FF9800' },
-                      { slug: 'bar', labelKey: 'explore.catBar' as const, color: '#2196F3' },
-                      { slug: 'meyhane', labelKey: 'explore.catMeyhane' as const, color: '#9C27B0' },
-                      { slug: 'fastfood', labelKey: 'explore.catFastfood' as const, color: '#F44336' },
-                      { slug: 'bistro', labelKey: 'explore.catBistro' as const, color: '#009688' },
-                      { slug: 'coffee', labelKey: 'explore.catCoffee' as const, color: '#795548' },
-                      { slug: 'bakery', labelKey: 'explore.catBakery' as const, color: '#E91E63' },
-                    ] as const
-                  ).map((cat) => {
-                    const label = t(cat.labelKey);
+                  {VENUE_CATEGORIES.map((cat, index) => {
+                    const color =
+                      VENUE_CATEGORY_CARD_COLORS[index % VENUE_CATEGORY_CARD_COLORS.length];
+                    const label = i18n.language?.toLowerCase().startsWith('tr')
+                      ? cat.labelTr
+                      : cat.slug
+                          .split('_')
+                          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                          .join(' ');
                     return (
-                    <TouchableOpacity
-                      key={cat.slug}
-                      style={[styles.categoryCard, { borderLeftColor: cat.color }]}
-                      onPress={() =>
-                        navigation.navigate('CategoryList', {
-                          categorySlug: cat.slug,
-                          categoryName: label,
-                        })
-                      }
-                    >
-                      <Text style={[styles.categoryCardLabel, { color: colors.text }]}>{label}</Text>
-                      <Text style={[styles.categoryCardHint, { color: colors.textSecondary }]}>
-                        {t('explore.searchNearMeInLists')}
-                      </Text>
-                    </TouchableOpacity>
+                      <TouchableOpacity
+                        key={cat.slug}
+                        style={[styles.categoryCard, { borderLeftColor: color }]}
+                        onPress={() =>
+                          navigation.navigate('CategoryList', {
+                            categorySlug: cat.slug,
+                            categoryName: label,
+                          })
+                        }
+                      >
+                        <Text style={[styles.categoryCardLabel, { color: colors.text }]}>{label}</Text>
+                        <Text style={[styles.categoryCardHint, { color: colors.textSecondary }]}>
+                          {t('explore.searchNearMeInLists')}
+                        </Text>
+                      </TouchableOpacity>
                     );
                   })}
                 </View>

@@ -4,7 +4,8 @@
 
 normalize_pg_url() {
   local u=$1
-  u=$(printf '%s' "$u" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  # Baş/son boşluk, CR, LF (GitHub Secret UI'dan sızan satır sonu sık auth hatası yapar)
+  u=$(printf '%s' "$u" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   [[ -z "$u" ]] && { printf '%s' "$u"; return; }
   if [[ "$u" != *sslmode=* ]]; then
     if [[ "$u" == *\?* ]]; then

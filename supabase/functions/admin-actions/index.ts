@@ -433,7 +433,7 @@ Deno.serve(async (req) => {
 
     const allowed = new Set([
       'balikci', 'bar', 'beach', 'burger', 'cafe', 'meyhane', 'nargile', 'pizza', 'restaurant', 'street_food', 'dessert',
-      'other', 'fastfood', 'bistro', 'coffee', 'bakery',
+      'other',
     ]);
     if (!allowed.has(categorySlug)) return err400(req, 'invalid category_slug');
 

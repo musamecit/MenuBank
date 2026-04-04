@@ -3,6 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/env';
 
+if (__DEV__ && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
+  console.error(
+    '[Supabase] EXPO_PUBLIC_SUPABASE_URL veya EXPO_PUBLIC_SUPABASE_ANON_KEY boş. .env / EAS secret kontrol edin.',
+  );
+}
+
 const ExpoSecureStoreAdapter = {
   getItem: (key: string) => {
     return SecureStore.getItemAsync(key).catch(error => {

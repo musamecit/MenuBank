@@ -36,7 +36,11 @@ import {
   fetchClaimSubmissionGate,
   ackClaimStorePurchase,
 } from '../lib/ownerDashboard';
-import { ADMIN_VENUE_CATEGORIES, appSlugFromStoredCuisine } from '../lib/venueCategories';
+import {
+  VENUE_CATEGORIES,
+  appSlugFromStoredCuisine,
+  venueCategoryDisplayLabelTr,
+} from '../lib/venueCategories';
 import { adminSetRestaurantVenueCategory } from '../lib/adminVenueCategory';
 import {
   fetchProducts,
@@ -605,7 +609,9 @@ export default function RestaurantDetailScreen() {
         {restaurant.cuisine_primary && (
           <View style={styles.cuisineRow}>
             <Utensils size={14} color={colors.textSecondary} />
-            <Text style={styles.cuisineText}>{restaurant.cuisine_primary}</Text>
+            <Text style={styles.cuisineText}>
+              {venueCategoryDisplayLabelTr(restaurant.cuisine_primary)}
+            </Text>
           </View>
         )}
         {restaurant.contact_phone && (
@@ -806,7 +812,7 @@ export default function RestaurantDetailScreen() {
           </View>
           <Text style={[styles.adminVenueHint, { color: colors.textSecondary }]}>{t('restaurant.adminVenueCategoryHint')}</Text>
           <View style={styles.adminVenueChipWrap}>
-            {ADMIN_VENUE_CATEGORIES.map((cat) => {
+            {VENUE_CATEGORIES.map((cat) => {
               const current = appSlugFromStoredCuisine(restaurant.cuisine_primary);
               const active = current === cat.slug;
               return (

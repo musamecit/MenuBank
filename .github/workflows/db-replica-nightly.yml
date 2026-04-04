@@ -50,6 +50,12 @@ jobs:
           TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
         run: bash scripts/ci-require-supabase-session-pooler.sh
 
+      - name: Pooler URI yapısı (şifre yok; parse kontrolü)
+        env:
+          SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
+          TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
+        run: python3 scripts/validate-pg-pooler-secret.py
+
       - name: PostgreSQL client
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-common

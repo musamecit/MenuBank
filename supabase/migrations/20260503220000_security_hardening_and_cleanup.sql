@@ -127,6 +127,7 @@ CREATE POLICY restaurant_claims_select ON public.restaurant_claims
   );
 
 -- INSERT: sadece authenticated kendi adına
+DROP POLICY IF EXISTS restaurant_claims_insert_own ON public.restaurant_claims;
 CREATE POLICY restaurant_claims_insert_own ON public.restaurant_claims
   FOR INSERT TO authenticated
   WITH CHECK (claimed_by = auth.uid());

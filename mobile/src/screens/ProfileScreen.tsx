@@ -6,14 +6,13 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { type NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import {
-  Settings, Heart, Users, Award, Share2, List, ChevronRight, LogOut, Trash2, Shield, Globe, ShieldCheck, Building2, Bell,
+  Settings, Heart, Award, Share2, List, ChevronRight, LogOut, Trash2, Shield, Globe, ShieldCheck, Building2,
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { signOut } from '../lib/authUtils';
 import { supabase } from '../lib/supabase';
 import { getFavoriteCount } from '../lib/favorites';
-import { fetchUnreadNotificationCount } from '../lib/userNotifications';
 import { getFollowingCount } from '../lib/userFollows';
 import { getUserLists, createUserList, type UserList } from '../lib/userLists';
 import { getFavoriteCuratedLists } from '../lib/userCuratedListFavorites';
@@ -36,6 +35,7 @@ interface UserProfile {
   trust_score: number;
   invite_code?: string;
   is_admin?: boolean;
+  display_name?: string | null;
 }
 
 function isApplePrivateRelayEmail(email: string | undefined): boolean {
@@ -64,9 +64,10 @@ function displayNameFromUser(user: User): string | null {
 function profileIdentityDisplay(
   user: User,
   t: TFunction,
+  profileDisplayName?: string | null,
 ): { primary: string; secondary: string | null; initial: string } {
   const email = user.email?.trim() || null;
-  const name = displayNameFromUser(user);
+  const name = displayNameFromUser(user) ?? profileDisplayName?.trim() || null;
   const relay = isApplePrivateRelayEmail(email ?? undefined);
 
   let primary: string;
@@ -102,7 +103,6 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [favCount, setFavCount] = useState(0);
   const [followCount, setFollowCount] = useState(0);
-  const [notifUnread, setNotifUnread] = useState(0);
   const [lists, setLists] = useState<UserList[]>([]);
   const [ownerClaims, setOwnerClaims] = useState<{ restaurant_id: string; status: string }[]>([]);
   const [loadingOut, setLoadingOut] = useState(false);
@@ -116,7 +116,6 @@ export default function ProfileScreen() {
         setProfile(null);
         setFavCount(0);
         setFollowCount(0);
-        setNotifUnread(0);
         setLists([]);
         setOwnerClaims([]);
         return;
@@ -124,7 +123,7 @@ export default function ProfileScreen() {
       let cancelled = false;
       supabase
         .from('user_profiles')
-        .select('reputation_points, trust_score, invite_code, is_admin')
+        .select('reputation_points, trust_score, invite_code, is_admin, display_name')
         .eq('id', user.id)
         .maybeSingle()
         .then(({ data }) => {
@@ -135,9 +134,6 @@ export default function ProfileScreen() {
       });
       getFollowingCount(user.id).then((c) => {
         if (!cancelled) setFollowCount(c);
-      });
-      fetchUnreadNotificationCount(user.id).then((c) => {
-        if (!cancelled) setNotifUnread(c);
       });
       getUserLists(user.id).then((l) => {
         if (!cancelled) setLists(l);
@@ -206,7 +202,7 @@ export default function ProfileScreen() {
     }
   }, [user, lists.length, t, navigation]);
 
-  const identity = user ? profileIdentityDisplay(user, t) : null;
+  const identity = user ? profileIdentityDisplay(user, t, profile?.display_name) : null;
 
   if (!user) {
     return (
@@ -281,15 +277,6 @@ export default function ProfileScreen() {
         <Text style={styles.actionRowText}>{t('profile.myFavorites')}</Text>
         <Text style={styles.actionRowCount}>{favCount}</Text>
       </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.actionRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-        onPress={() => navigation.navigate('Notifications')}
-      >
-        <Bell size={20} color={colors.accent} />
-        <Text style={styles.actionRowText}>{t('settings.notifications')}</Text>
-        <Text style={styles.actionRowCount}>{notifUnread}</Text>
-      </TouchableOpacity>
-
       {/* Admin & Restoran Seç */}
       {profile?.is_admin && (
         <TouchableOpacity

@@ -424,8 +424,6 @@ export default function AdminScreen() {
       keyboardDismissMode="on-drag"
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
     >
-      <Text style={[styles.header, { color: colors.text }]}>{t('admin.title')}</Text>
-
       <AdminSection
         icon={ClipboardList}
         title={t('admin.pendingEstablishments')}
@@ -772,7 +770,6 @@ function getStyles(colors: ColorSet) {
   return StyleSheet.create({
     container: { flex: 1 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { fontSize: 22, fontWeight: '700', paddingHorizontal: 16, paddingTop: 60, paddingBottom: 16 },
     noAccess: { fontSize: 16, marginTop: 12 },
     searchSection: {
       flexDirection: 'row',

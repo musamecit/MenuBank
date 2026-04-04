@@ -87,6 +87,8 @@ export default function RootNavigator() {
         headerTintColor: colors.text,
         headerShadowVisible: false,
         contentStyle: { backgroundColor: colors.background },
+        /* iOS: üst rota adı "Tabs" yerine Geri/Back etiketi */
+        headerBackTitle: t('common.back'),
       }}
     >
       <Stack.Screen
@@ -113,10 +115,22 @@ export default function RootNavigator() {
       <Stack.Screen name="CityTrend" component={CityTrendScreen} options={{ title: '' }} />
       <Stack.Screen name="OwnerDashboard" component={OwnerDashboardScreen} options={{ title: '' }} />
       <Stack.Screen name="RestaurantSelect" component={RestaurantSelectScreen} options={{ title: t('profile.restaurantSelect') }} />
-      <Stack.Screen name="Admin" component={AdminScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="Admin"
+        component={AdminScreen}
+        options={{ title: t('admin.title'), headerBackTitle: t('common.back') }}
+      />
       <Stack.Screen name="ListsExplore" component={ListsExploreScreen} options={{ title: '' }} />
-      <Stack.Screen name="Favorites" component={FavoritesScreen} options={{ title: '' }} />
-      <Stack.Screen name="Notifications" component={NotificationScreen} options={{ title: '' }} />
+      <Stack.Screen
+        name="Favorites"
+        component={FavoritesScreen}
+        options={{ title: t('profile.myFavorites'), headerBackTitle: t('common.back') }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationScreen}
+        options={{ title: t('settings.notifications'), headerBackTitle: t('common.back') }}
+      />
       <Stack.Screen name="CategoryList" component={CategoryListScreen} options={({ route }) => ({ title: route.params.categoryName })} />
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} options={{ title: t('settings.blockedUsers', 'Engellenen Kullanıcılar') }} />
     </Stack.Navigator>

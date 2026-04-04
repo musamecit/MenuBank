@@ -1,4 +1,7 @@
-/** Tek kaynak: mekan / menü akışındaki cuisine_primary slug'ları */
+/**
+ * Tek kaynak: Filtre, Menü Ekle, restoran detay (yönetici kategori), Keşfet → Listeler kartları.
+ * cuisine_primary / category_slug değerleri bu slug listesi ile uyumlu olmalı.
+ */
 export const VENUE_CATEGORIES: { slug: string; labelTr: string }[] = [
   { slug: 'balikci', labelTr: 'Balıkçı' },
   { slug: 'bar', labelTr: 'Bar' },
@@ -14,24 +17,32 @@ export const VENUE_CATEGORIES: { slug: string; labelTr: string }[] = [
   { slug: 'other', labelTr: 'Diğer' },
 ];
 
-/** Keşfet → Listeler kartlarında kullanılan ek slug'lar */
-const VENUE_CATEGORIES_EXTRA_FOR_LISTS: { slug: string; labelTr: string }[] = [
-  { slug: 'fastfood', labelTr: 'Fast Food' },
-  { slug: 'bistro', labelTr: 'Bistro & Lounge' },
-  { slug: 'coffee', labelTr: 'Kahveciler' },
-  { slug: 'bakery', labelTr: 'Tatlı & Fırın' },
+/** @deprecated Aynı liste; eski importlar kırılmasın diye alias. */
+export const ADMIN_VENUE_CATEGORIES = VENUE_CATEGORIES;
+
+/** Keşfet → Listeler kategori kartları (sıra VENUE_CATEGORIES ile aynı). */
+export const VENUE_CATEGORY_CARD_COLORS = [
+  '#0277BD',
+  '#2196F3',
+  '#00BCD4',
+  '#FF9800',
+  '#795548',
+  '#9C27B0',
+  '#673AB7',
+  '#F44336',
+  '#4CAF50',
+  '#E91E63',
+  '#009688',
+  '#607D8B',
 ];
 
-const adminCatBySlug = new Map<string, { slug: string; labelTr: string }>();
-for (const c of VENUE_CATEGORIES) adminCatBySlug.set(c.slug, c);
-for (const c of VENUE_CATEGORIES_EXTRA_FOR_LISTS) {
-  if (!adminCatBySlug.has(c.slug)) adminCatBySlug.set(c.slug, c);
-}
-
-/** Admin restoran kategorisi + Keşfet listeleri ile uyumlu tüm venue slug'ları */
-export const ADMIN_VENUE_CATEGORIES: { slug: string; labelTr: string }[] = Array.from(adminCatBySlug.values()).sort((a, b) =>
-  a.labelTr.localeCompare(b.labelTr, 'tr'),
-);
+/** Eski DB cuisine_primary slug → Türkçe (sadece metin gösterimi). */
+const LEGACY_CUISINE_LABELS: Record<string, string> = {
+  fastfood: 'Fast Food',
+  bistro: 'Bistro & Lounge',
+  coffee: 'Kahveciler',
+  bakery: 'Tatlı & Fırın',
+};
 
 /** DB / eski cuisine_primary metinlerinden uygulama slug'ına */
 export function appSlugFromStoredCuisine(cuisine: string | null | undefined): string | null {
@@ -41,4 +52,14 @@ export function appSlugFromStoredCuisine(cuisine: string | null | undefined): st
   if (s === 'tatli') return 'dessert';
   if (s === 'diger') return 'other';
   return s;
+}
+
+/** Üstteki satırda ham slug yerine okunaklı Türkçe (legacy slug'lar dahil). */
+export function venueCategoryDisplayLabelTr(cuisine: string | null | undefined): string {
+  if (cuisine == null || !String(cuisine).trim()) return '';
+  const raw = String(cuisine).trim();
+  const slug = appSlugFromStoredCuisine(raw) ?? raw;
+  const row = VENUE_CATEGORIES.find((c) => c.slug === slug);
+  if (row) return row.labelTr;
+  return LEGACY_CUISINE_LABELS[slug] ?? raw;
 }
