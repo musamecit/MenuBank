@@ -46,29 +46,26 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16 dnsutils
 
       # Hangi uçta hata olduğunu logda net görmek için (şifreler maskelenir)
+      # libpq: PGHOSTADDR=IPv4 + PGHOST=hostname (TLS SNI). URI ?hostaddr= runner'da IPv6 seçmeye devam edebiliyor.
       - name: Kaynak DB bağlantı testi
         env:
           PGSSLMODE: require
           PGCONNECT_TIMEOUT: "30"
-          REPLICA_PREFER_IPV4: "1"
           SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
         run: |
           set -euo pipefail
-          source scripts/pg-url-normalize.sh
-          U="$(finalize_pg_url "$SOURCE_DATABASE_URL")"
-          psql "$U" -v ON_ERROR_STOP=1 -c "SELECT 1 AS source_ok;"
+          eval "$(python3 scripts/pg_ci_libpq_env.py SOURCE_DATABASE_URL)"
+          psql -v ON_ERROR_STOP=1 -c "SELECT 1 AS source_ok;"
 
       - name: Hedef DB bağlantı testi
         env:
           PGSSLMODE: require
           PGCONNECT_TIMEOUT: "30"
-          REPLICA_PREFER_IPV4: "1"
           TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
         run: |
           set -euo pipefail
-          source scripts/pg-url-normalize.sh
-          U="$(finalize_pg_url "$TARGET_DATABASE_URL")"
-          psql "$U" -v ON_ERROR_STOP=1 -c "SELECT 1 AS target_ok;"
+          eval "$(python3 scripts/pg_ci_libpq_env.py TARGET_DATABASE_URL)"
+          psql -v ON_ERROR_STOP=1 -c "SELECT 1 AS target_ok;"
 
       - name: Yedekle (prod salt okunur)
         env:
